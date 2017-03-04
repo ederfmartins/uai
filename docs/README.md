@@ -4,7 +4,7 @@
 
 The idea of writing my own language starts a long time ago. Last year, after a good lunch, my friends and I was chatting about some problems that our favourite programming languages have. At some point we started to troll PHP, which caused one of my colleagues to get upset and ask me why I did not make my own language (he is not an engineer and PHP was the only language he knew). Two days later I came up with a simple REPL able to execute some basic expressions. He then suggested that this "new language" must be called uai. 
  
-Uai is a king of interjection commonly used by people of Minas Gerais, my homeland. Uai can mean astonishment, doubt, agreement and so its a perfect name for a program language.
+Uai is a kind of interjection commonly used by people of Minas Gerais, my homeland. Uai can mean astonishment, doubt, agreement and so its a perfect name for a program language.
 
 # Purpose
 

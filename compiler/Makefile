@@ -13,7 +13,7 @@ LDFLAGS=-lLLVM-3.8 `llvm-config --cxxflags --ldflags --libs core executionengine
 all: lex-gen yacc-gen compile
 
 
-compile: lexer.o yacc.o assembler_core.o
+compile: lexer.o yacc.o ast_node.o assembler_core.o
 	$(LD) *.o $(LDFLAGS) -o uai
 
 test: compile
@@ -29,6 +29,9 @@ yacc-gen:
 	yacc -dtv grammar/grammar.yacc -o grammar/grammar.c
 
 yacc.o: grammar/grammar.c hash.o str.o list.o
+	$(CC) $(CFLAGS) -c $<
+
+ast_node.o: grammar/ast_node.c
 	$(CC) $(CFLAGS) -c $<
 
 hash.o: collections/hash.c util.o vector.o

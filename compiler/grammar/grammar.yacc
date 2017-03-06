@@ -1,4 +1,5 @@
 %{
+    //#define YYDEBUG 1
     #include "../grammar/ast_node.h"
     #include "../assembler/core.h"
 
@@ -19,6 +20,7 @@
     void yyerror(const char *str);
 
     Assembler assembler;
+    //int yydebug = 1;
 %}
 
 %define parse.error verbose
@@ -29,6 +31,7 @@
 %token<i> INT
 %token<d> FLOAT
 %token<s> BOOLEAN
+%token<s> RETURN
 
 %token<s> PRINT
 %token<s> DEF
@@ -40,11 +43,12 @@
 %token<s> NEQ_OP
 %token<s> NE_OP
 
-%type<node> additive_expression multiplicative_expression const_expression expr
+%type<node> postfix_expression primary_expression
+%type<node> additive_expression multiplicative_expression expr
 %type<node> assignment_expression statement statement_list
 %type<node> relational_expression equality_expression
 %type<node> logical_and_expression logical_or_expression conditional_expression
-%type<node> print_stm function_definition
+%type<node> print_stm function_definition return_statement
 
 %start prog
 
@@ -56,13 +60,11 @@ statement_list
     : statement
     | statement_list statement
     {
-        ll_transfer(&$1.instructions_list, &$2.instructions_list);
-        ll_destroy(&$2.instructions_list);
-        $$ = $1;
+        $$ = node_merge($1, $2);
     }
     ;
 
-statement: expr '\n' | assignment_expression | print_stm;
+statement: expr '\n' | assignment_expression | print_stm | return_statement;
 
 assignment_expression: IDENTIFIER '=' logical_or_expression '\n'
     {
@@ -72,7 +74,7 @@ assignment_expression: IDENTIFIER '=' logical_or_expression '\n'
 
 expr: logical_or_expression;
 
-const_expression
+primary_expression
     : INT
     {
         $$ = assembler_const_int(assembler, $1);
@@ -97,19 +99,33 @@ const_expression
         }
         $$ = assembler_produce_load_variable(assembler, $1);
     }
+    | 
+    ;
+
+postfix_expression
+    : primary_expression
+    | IDENTIFIER '(' ')'
+    {
+        Assembler_str* ptr = (Assembler_str*) assembler;
+        $$ = node_init();
+        LLVMValueRef args[1];
+        LLVMValueRef f = hash_get(ptr->globals, (void*) $1);
+        LLVMValueRef call_func = LLVMBuildCall(ptr->builder, f, args, 0, "tmp");
+        node_add_instruction(&$$, call_func);
+    }
     ;
 
 multiplicative_expression
-    : const_expression
-    | multiplicative_expression '*' const_expression
+    : postfix_expression
+    | multiplicative_expression '*' postfix_expression
     {
         $$ = exec_op(assembler, $1, $3, '*');
     }
-    | multiplicative_expression '/' const_expression
+    | multiplicative_expression '/' postfix_expression
     {
         $$ = exec_op(assembler, $1, $3, '/');
     }
-    | multiplicative_expression '%' const_expression
+    | multiplicative_expression '%' postfix_expression
     {
         $$ = exec_op(assembler, $1, $3, '%');
     }
@@ -159,7 +175,22 @@ print_stm: PRINT expr '\n'
 
 function_definition: DEF IDENTIFIER '(' ')' discardable_tokens '{' discardable_tokens statement_list discardable_tokens '}' discardable_tokens
     {
+        if (assembler_is_defined(assembler, $2)) {
+            printf("Error at line %d: identifier %s was previos defined!\n", yylineno, $2);
+            exit(-1);
+        }
         assembler_produce_function(assembler, $2, $8);
+    }
+    ;
+
+return_statement
+    : RETURN '\n'
+    {
+        $$ = assembler_produce_ret_void(assembler);
+    }
+    | RETURN expr '\n'
+    {
+        $$ = assembler_produce_return(assembler, $2);
     }
     ;
 

@@ -12,14 +12,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct
-{
-    char* mod_name;
-    LLVMModuleRef mod;
-    LLVMBuilderRef builder;
-    ptr_hash_t globals;
-    ptr_hash_t locals;
-} Assembler_str;
+// typedef struct
+// {
+//     char* mod_name;
+//     LLVMModuleRef mod;
+//     LLVMBuilderRef builder;
+//     ptr_hash_t globals;
+//     ptr_hash_t locals;
+// } Assembler_str;
 
 LLVMValueRef _assembler_create_constant(Assembler assembler, const char* name, const char* value)
 {
@@ -45,6 +45,14 @@ char* _get_module_name(const char* fname)
     if (i < 0) i = 0;
     if (fname[i] == '/') i++;
     return strdup(&fname[i]);
+}
+
+void* _assembler_lookup(Assembler assembler, const char* identifier)
+{
+    Assembler_str* ptr = (Assembler_str*) assembler;
+    if (hash_contains_key(ptr->locals, (void*) identifier))
+        return hash_get(ptr->locals, (void*) identifier);
+    else return hash_get(ptr->globals, (void*) identifier);
 }
 
 Assembler assembler_init(const char* module_name)
@@ -97,58 +105,59 @@ int assembler_dump_bytecode(Assembler assembler, const char* out_name)
 
 Node exec_op(Assembler a, Node n1, Node n2, char op)
 {
-    Node ret;
     Assembler_str* ptr = (Assembler_str*) a;
-    ret.instructions_list = n1.instructions_list;
-    ll_transfer(&ret.instructions_list, &n2.instructions_list);
-    ll_destroy(&n2.instructions_list);
+    Node ret;
+    LLVMValueRef llvm;
     int is_double = LLVMTypeOf(n1.llvm) == LLVMDoubleType();
+
     switch (op) {
         case '+':
-            if (is_double) ret.llvm = LLVMBuildFAdd(ptr->builder, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildAdd(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFAdd(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildAdd(ptr->builder, n1.llvm, n2.llvm, "tmp");
             break;
         case '-':
-            if (is_double) ret.llvm = LLVMBuildFSub(ptr->builder, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildSub(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFSub(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildSub(ptr->builder, n1.llvm, n2.llvm, "tmp");
             break;
         case '*':
-            if (is_double) ret.llvm = LLVMBuildFMul(ptr->builder, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildMul(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFMul(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildMul(ptr->builder, n1.llvm, n2.llvm, "tmp");
             break;
         case '/':
-            if (is_double) ret.llvm = LLVMBuildFDiv(ptr->builder, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildUDiv(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFDiv(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildUDiv(ptr->builder, n1.llvm, n2.llvm, "tmp");
             break;
         case '%':
-            ret.llvm = LLVMBuildSDiv(ptr->builder, n1.llvm, n2.llvm, "tmp");
+            llvm = LLVMBuildSDiv(ptr->builder, n1.llvm, n2.llvm, "tmp");
             break;
         case '>':
-            if (is_double) ret.llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildICmp (ptr->builder, LLVMIntUGT, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntUGT, n1.llvm, n2.llvm, "tmp");
             break;
         case '<':
-            if (is_double) ret.llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildICmp (ptr->builder, LLVMIntSLT, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSLT, n1.llvm, n2.llvm, "tmp");
             break;
         case 'g':
-            if (is_double) ret.llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildICmp (ptr->builder, LLVMIntUGE, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntUGE, n1.llvm, n2.llvm, "tmp");
             break;
         case 'l':
-            if (is_double) ret.llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildICmp (ptr->builder, LLVMIntSLE, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSLE, n1.llvm, n2.llvm, "tmp");
             break;
         case '=':
-            if (is_double) ret.llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildICmp (ptr->builder, LLVMIntEQ, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntEQ, n1.llvm, n2.llvm, "tmp");
             break;
         case '!':
-            if (is_double) ret.llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
-            else ret.llvm = LLVMBuildICmp (ptr->builder, LLVMIntNE, n1.llvm, n2.llvm, "tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, n1.llvm, n2.llvm, "tmp");
+            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntNE, n1.llvm, n2.llvm, "tmp");
             break;
     }
-    ll_insert(&ret.instructions_list, ret.llvm);
+
+    ret = node_merge(n1, n2);
+    node_add_instruction(&ret, llvm);
     return ret;
 }
 
@@ -157,61 +166,64 @@ Node assembler_produce_print(Assembler assembler, Node expr)
     Assembler_str* ptr = (Assembler_str*) assembler;
     LLVMValueRef n = expr.llvm;
     LLVMValueRef arg;
+
     if (LLVMTypeOf(expr.llvm) == LLVMDoubleType()) {
         arg = hash_get(ptr->globals, (void*) ".print_arg_f");
     }
     else {
         arg = hash_get(ptr->globals, (void*) ".print_arg_d");
     }
+
     arg = LLVMConstPointerCast(arg, LLVMPointerType(LLVMInt8Type(), 0));
     LLVMValueRef args[] = {arg, n};
     LLVMValueRef print = hash_get(ptr->globals, (void*) "print");
-    LLVMValueRef call_fac = LLVMBuildCall(ptr->builder, print, args, 2, "print");
-    expr.llvm = call_fac;
-    ll_insert(&expr.instructions_list, expr.llvm);
+    LLVMValueRef call_func = LLVMBuildCall(ptr->builder, print, args, 2, "print");
+    node_add_instruction(&expr, call_func);
+
     return expr;
 }
 
 Node assembler_const_bool(Assembler assembler, const char* value)
 {
-    Node node;
+    Node node = node_init();
     int v = 0;
     if (strcmp(value, "true")) v = 1;
-    node.llvm = LLVMConstInt(LLVMInt1Type(), v, 0);
-    ll_init(&node.instructions_list);
+    node_add_instruction(&node, LLVMConstInt(LLVMInt1Type(), v, 0));
     return node;
 }
 
 Node assembler_const_int(Assembler assembler, int value)
 {
-    Node node;
-    node.llvm = LLVMConstInt(LLVMInt32Type(), value, 0);
-    ll_init(&node.instructions_list);
+    Node node = node_init();
+    node_add_instruction(&node, LLVMConstInt(LLVMInt32Type(), value, 0));
     return node;
 }
 
 Node assembler_const_float(Assembler assembler, double value)
 {
-    Node node;
-    node.llvm = LLVMConstReal(LLVMDoubleType(), value);
-    ll_init(&node.instructions_list);
+    Node node = node_init();
+    node_add_instruction(&node, LLVMConstReal(LLVMDoubleType(), value));
     return node;
+}
+
+int assembler_is_global_defined(Assembler assembler, const char* identifier)
+{
+    Assembler_str* ptr = (Assembler_str*) assembler;
+    return hash_contains_key(ptr->globals, (void*) identifier);
 }
 
 int assembler_is_defined(Assembler assembler, const char* identifier)
 {
     Assembler_str* ptr = (Assembler_str*) assembler;
-    return hash_get(ptr->globals, (void*) identifier) != NULL;
+    return hash_contains_key(ptr->globals, (void*) identifier) || hash_contains_key(ptr->locals, (void*) identifier);
 }
 
 Node assembler_produce_load_variable(Assembler assembler, const char* varName)
 {
     Assembler_str* ptr = (Assembler_str*) assembler;
-    Node node;
-    LLVMValueRef val = (LLVMValueRef) hash_get(ptr->globals, (void*) varName);
-    node.llvm = LLVMBuildLoad(ptr->builder, val, varName);
-    ll_init(&node.instructions_list);
-    ll_insert(&node.instructions_list, node.llvm);
+    Node node = node_init();
+    LLVMValueRef val = (LLVMValueRef) _assembler_lookup(ptr, varName);
+    node_add_instruction(&node, LLVMBuildLoad(ptr->builder, val, "tmp"));
     return node;
 }
 
@@ -220,64 +232,70 @@ Node assembler_produce_store_variable(Assembler assembler, const char* varName, 
     Assembler_str* ptr = (Assembler_str*) assembler;
     if (! assembler_is_defined(assembler, varName)) {
         LLVMValueRef var = LLVMBuildAlloca(ptr->builder, LLVMTypeOf(expr.llvm), varName);
-        hash_put(ptr->globals, (void*) varName, var);
+        hash_put(ptr->locals, (void*) varName, var);
         ll_insert(&(expr.instructions_list), var);
     }
-    LLVMValueRef var = hash_get(ptr->globals, (void*) varName);
+    LLVMValueRef var = _assembler_lookup(assembler, varName);
     ll_insert(&expr.instructions_list, LLVMBuildStore(ptr->builder, expr.llvm, var));
     return expr;
 }
 
-void assembler_produce_main(Assembler assembler, Node statement_list)
+Node assembler_produce_ret_void(Assembler assembler)
 {
     Assembler_str* ptr = (Assembler_str*) assembler;
+    Node node = node_init();
+    LLVMValueRef ret_type = LLVMBuildRetVoid(ptr->builder);
+    node_add_instruction(&node, ret_type);
+    node.return_type = LLVMVoidType();
+    node.return_type_valid = 1;
+    return node;
+}
 
-    LLVMTypeRef param_types[1];
-    LLVMTypeRef ret_type = LLVMFunctionType(LLVMVoidType(), param_types, 0, 0);
-    LLVMValueRef main_func = LLVMAddFunction(ptr->mod, "main", ret_type);
-
-    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(main_func, "entry");
-    LLVMBuilderRef curr_builder = LLVMCreateBuilder();
-    LLVMPositionBuilderAtEnd(curr_builder, entry);
-
-    LinkedList instructions = statement_list.instructions_list;
-    for (NodeList* node = ll_iter_begin(&instructions);
-        node != ll_iter_end(&instructions);
-        node = ll_iter_next(node))
-    {
-        LLVMValueRef inst = nl_getValue(node);
-        if (LLVMIsConstant(inst))
-            continue;
-        //printf("...%s\n", LLVMPrintValueToString(inst));
-        LLVMInsertIntoBuilder(curr_builder, inst);
-    }
-    LLVMBuildRetVoid(curr_builder);
-    ll_destroy(&instructions);
+Node assembler_produce_return(Assembler assembler, Node expr)
+{
+    Assembler_str* ptr = (Assembler_str*) assembler;
+    expr.return_type_valid = 1;
+    expr.return_type = LLVMTypeOf(expr.llvm);
+    LLVMValueRef ret_inst = LLVMBuildRet(ptr->builder, expr.llvm);
+    node_add_instruction(&expr, ret_inst);
+    return expr;
 }
 
 void assembler_produce_function(Assembler assembler, const char* func_name, Node statement_list)
 {
     Assembler_str* ptr = (Assembler_str*) assembler;
 
-    LLVMTypeRef param_types[1];
-    LLVMTypeRef ret_type = LLVMFunctionType(LLVMVoidType(), param_types, 0, 0);
-    LLVMValueRef main_func = LLVMAddFunction(ptr->mod, func_name, ret_type);
+    if (!statement_list.return_type_valid) {
+        node_add_instruction(&statement_list, LLVMBuildRetVoid(ptr->builder));
+        statement_list.return_type = LLVMVoidType();
+    }
 
-    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(main_func, "entry");
+    LLVMTypeRef param_types[1];
+    LLVMTypeRef ret_type = LLVMFunctionType(statement_list.return_type, param_types, 0, 0);
+    LLVMValueRef func = LLVMAddFunction(ptr->mod, func_name, ret_type);
+
+    LLVMBasicBlockRef entry = LLVMAppendBasicBlock(func, "entry");
     LLVMBuilderRef curr_builder = LLVMCreateBuilder();
     LLVMPositionBuilderAtEnd(curr_builder, entry);
 
     LinkedList instructions = statement_list.instructions_list;
+    // printf("%s instructions %d\n", func_name, ll_size(&instructions));
     for (NodeList* node = ll_iter_begin(&instructions);
         node != ll_iter_end(&instructions);
         node = ll_iter_next(node))
     {
         LLVMValueRef inst = nl_getValue(node);
+        //printf("...%s\n", LLVMPrintValueToString(inst));
         if (LLVMIsConstant(inst))
             continue;
-        //printf("...%s\n", LLVMPrintValueToString(inst));
         LLVMInsertIntoBuilder(curr_builder, inst);
     }
-    LLVMBuildRetVoid(curr_builder);
-    ll_destroy(&instructions);
+
+    node_destroy(&statement_list);
+    LLVMDisposeBuilder(curr_builder);
+    hash_put(ptr->globals, (void*) func_name, func);
+
+    // Clear local variables
+    hash_destroy(ptr->locals);
+    ptr->locals = hash_create(100, 0.75, (_COMPARE*) str_compare, (_HASH_CODE*) str_hash_code, NULL, NULL, NULL, NULL);
 }

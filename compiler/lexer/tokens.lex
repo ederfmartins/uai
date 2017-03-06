@@ -38,6 +38,7 @@ or                  { return OR_OP; }
 and                  { return AND_OP; }
 
 print                  { return PRINT; }
+return                  { return RETURN; }
 def                  { return DEF; }
 
 0[xX]{H}+           { yylval.i = strtol(yytext, NULL, 16); return INT; }

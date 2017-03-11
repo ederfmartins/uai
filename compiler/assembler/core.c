@@ -261,7 +261,7 @@ Node assembler_produce_return(Assembler assembler, Node expr)
     return expr;
 }
 
-void assembler_produce_function(Assembler assembler, const char* func_name, Node statement_list)
+void assembler_produce_function(Assembler assembler, const char* func_name, Node statement_list, LinkedList param_list)
 {
     Assembler_str* ptr = (Assembler_str*) assembler;
 
@@ -270,8 +270,16 @@ void assembler_produce_function(Assembler assembler, const char* func_name, Node
         statement_list.return_type = LLVMVoidType();
     }
 
-    LLVMTypeRef param_types[1];
-    LLVMTypeRef ret_type = LLVMFunctionType(statement_list.return_type, param_types, 0, 0);
+    LLVMTypeRef param_types[200];
+
+    NodeList* cur_node = ll_iter_begin(&param_list);
+    for (int i = 0; i < ll_size(&param_list); i++)
+    {
+        param_types[i] = ((Parameter*) nl_getValue(cur_node))->type;
+        cur_node = ll_iter_next(cur_node);
+    }
+
+    LLVMTypeRef ret_type = LLVMFunctionType(statement_list.return_type, param_types, ll_size(&param_list), 0);
     LLVMValueRef func = LLVMAddFunction(ptr->mod, func_name, ret_type);
 
     LLVMBasicBlockRef entry = LLVMAppendBasicBlock(func, "entry");

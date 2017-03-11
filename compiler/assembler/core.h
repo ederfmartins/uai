@@ -27,7 +27,7 @@ Node exec_op(Assembler a, Node n1, Node n2, char op);
 Node assembler_produce_print(Assembler assembler, Node expr);
 Node assembler_produce_load_variable(Assembler assembler, const char* varName);
 Node assembler_produce_store_variable(Assembler assembler, const char* varName, Node expr);
-void assembler_produce_function(Assembler assembler, const char* func_name, Node statement_list);
+void assembler_produce_function(Assembler assembler, const char* func_name, Node statement_list, LinkedList param_list);
 Node assembler_produce_ret_void(Assembler assembler);
 Node assembler_produce_return(Assembler assembler, Node expr);
 

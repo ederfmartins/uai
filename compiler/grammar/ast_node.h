@@ -18,4 +18,10 @@ void node_destroy(Node* node);
 Node node_merge(Node n1, Node n2);
 void node_add_instruction(Node* node, LLVMValueRef inst);
 
+typedef struct
+{
+    LLVMTypeRef type;
+    const char* name;
+} Parameter;
+
 #endif

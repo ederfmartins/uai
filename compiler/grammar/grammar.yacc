@@ -25,7 +25,14 @@
 
 %define parse.error verbose
 
-%union { int i; char* s; double d; Node node;}
+%union { \
+    int i; \
+    char* s; \
+    double d; \
+    Node node; \
+    Parameter param; \
+    LinkedList list; \
+}
 
 %token<s> IDENTIFIER
 %token<i> INT
@@ -49,6 +56,8 @@
 %type<node> relational_expression equality_expression
 %type<node> logical_and_expression logical_or_expression conditional_expression
 %type<node> print_stm function_definition return_statement
+%type<list> parameter_list argument_expression_list
+%type<param> parameter_declaration
 
 %start prog
 
@@ -106,12 +115,53 @@ postfix_expression
     : primary_expression
     | IDENTIFIER '(' ')'
     {
+        // corrigir os testes de integração
         Assembler_str* ptr = (Assembler_str*) assembler;
         $$ = node_init();
         LLVMValueRef args[1];
         LLVMValueRef f = hash_get(ptr->globals, (void*) $1);
         LLVMValueRef call_func = LLVMBuildCall(ptr->builder, f, args, 0, "tmp");
         node_add_instruction(&$$, call_func);
+    }
+    | IDENTIFIER '('argument_expression_list')'
+    {
+        $$ = node_init();
+        Assembler_str* ptr = (Assembler_str*) assembler;
+        LinkedList list = $3;
+        NodeList* cur_node = ll_iter_begin(&list);
+        LLVMValueRef args[200];
+
+        if (ll_size(&list) > 200) {
+            printf("Calling a function with %d arguments! Please refactore this cheet code, so.\n", ll_size(&list));
+            exit(-1);
+        }
+
+        for (int i = 0; i < ll_size(&list); i++)
+        {
+            args[i] = ((Node*) nl_getValue(cur_node))->llvm;
+            $$ = node_merge($$, * ((Node*) nl_getValue(cur_node)));
+            cur_node = ll_iter_next(cur_node);
+        }
+
+        LLVMValueRef f = hash_get(ptr->globals, (void*) $1);
+        LLVMValueRef call_func = LLVMBuildCall(ptr->builder, f, args, ll_size(&list), "tmp");
+        node_add_instruction(&$$, call_func);
+    }
+    ;
+
+argument_expression_list
+    : expr
+    {
+        ll_init(&$$);
+        Node* n = (Node*) malloc(sizeof(Node));
+        *n = $1;
+        ll_insert(&$$, n);
+    }
+    | argument_expression_list ',' expr
+    {
+        Node* n = (Node*) malloc(sizeof(Node));
+        *n = $3;
+        ll_insert(&$1, n);
     }
     ;
 
@@ -179,7 +229,47 @@ function_definition: DEF IDENTIFIER '(' ')' discardable_tokens '{' discardable_t
             printf("Error at line %d: identifier %s was previos defined!\n", yylineno, $2);
             exit(-1);
         }
-        assembler_produce_function(assembler, $2, $8);
+        LinkedList l;
+        l.cnt = 0;
+        assembler_produce_function(assembler, $2, $8, l);
+    }
+    | DEF IDENTIFIER '(' parameter_list ')' discardable_tokens '{' discardable_tokens statement_list discardable_tokens '}' discardable_tokens
+    {
+        if (assembler_is_defined(assembler, $2)) {
+            printf("Error at line %d: identifier %s was previos defined!\n", yylineno, $2);
+            exit(-1);
+        }
+
+        if (ll_size(&$4) > 200) {
+            printf("Declaring a function with %d arguments! Please refactore this cheet code, so.\n", ll_size(&$4));
+            exit(-1);
+        }
+
+        assembler_produce_function(assembler, $2, $9, $4);
+    }
+    ;
+
+parameter_list
+    : parameter_declaration
+    {
+        ll_init(&$$);
+        Parameter *p = (Parameter*) malloc(sizeof(Parameter));
+        *p = $1;
+        ll_insert(&$$, p);
+    }
+    | parameter_list ',' parameter_declaration
+    {
+        $$ = $1;
+        Parameter *p = (Parameter*) malloc(sizeof(Parameter));
+        *p = $3;
+        ll_insert(&$$, p);
+    }
+    ;
+
+parameter_declaration: IDENTIFIER IDENTIFIER
+    {
+        $$.type = LLVMInt32Type();
+        $$.name = $2;
     }
     ;
 

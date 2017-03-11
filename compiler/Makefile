@@ -53,7 +53,7 @@ assembler_core.o: assembler/core.c
 	$(CC) $(CFLAGS) -c $<
 
 clean:
-	-rm -f *.o *.bc *.ll
+	-rm -f *.o *.bc *.ll tests/*.bc tests/*.ll tests/*.out
 
 install_dependencies:
 	sudo apt-get install flex bison clang-3.8

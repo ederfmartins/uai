@@ -90,6 +90,14 @@ AbstractSyntacticTree* ast_const_int(int value)
     return ast;
 }
 
+AbstractSyntacticTree* ast_const_float(double value)
+{
+    AbstractSyntacticTree* ast = ast_init();
+    ast->production = CONST_REAL;
+    ast->value.leaf.double_constant = value;
+    return ast;
+}
+
 AbstractSyntacticTree* ast_return(AbstractSyntacticTree* expr)
 {
     return ast_interior(RET_EXPR, expr, NULL);
@@ -98,14 +106,6 @@ AbstractSyntacticTree* ast_return(AbstractSyntacticTree* expr)
 AbstractSyntacticTree* ast_print(AbstractSyntacticTree* expr)
 {
     return ast_interior(PRINT_STM, expr, NULL);
-}
-
-AbstractSyntacticTree* ast_const_float(double value)
-{
-    AbstractSyntacticTree* ast = ast_init();
-    ast->production = CONST_REAL;
-    ast->value.leaf.integer_constant = value;
-    return ast;
 }
 
 AbstractSyntacticTree* ast_var_name(const char* var_name)

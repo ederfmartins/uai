@@ -296,6 +296,14 @@ void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst)
         case PRINT_STM:
             _gen_print(ptr, inst);
         break;
+        case B_EXPR:
+        case CONST_INT:
+        case CONST_REAL:
+        case CONST_BOOL:
+        case VAR_NAME:
+        case FUNC_CALL:
+            _gen_expr(ptr, inst);
+        break;
         default:
             printf("Not implemented yet\n");
             exit(-1);
@@ -412,19 +420,18 @@ LLVMValueRef _assembler_create_gconst_str(Assembler assembler, const char* name,
     return c;
 }
 
-void assembler_declare_printf(Assembler assembler)
+void assembler_declare_printf(Assembler ptr)
 {
-    Assembler_str* ptr = (Assembler_str*) assembler;
-    LLVMValueRef d = _assembler_create_gconst_str(assembler, ".print_arg_d", "%d\n");
-    hash_put(ptr->globals, (void*)".print_arg_d", d);
-    LLVMValueRef f = _assembler_create_gconst_str(assembler, ".print_arg_f", "%f\n");
-    hash_put(ptr->globals, (void*)".print_arg_f", f);
+    LLVMValueRef d = _assembler_create_gconst_str(ptr, ".print_arg_d", "%d\n");
+    hash_put(ptr->globals, (void*) ".print_arg_d", d);
+    LLVMValueRef f = _assembler_create_gconst_str(ptr, ".print_arg_f", "%lf\n");
+    hash_put(ptr->globals, (void*) ".print_arg_f", f);
 
     LLVMTypeRef param_types[] = {LLVMPointerType(LLVMInt8Type(), 0)};
     LLVMTypeRef printf_type = LLVMFunctionType(LLVMInt32Type(), param_types, 1, 1);
     LLVMValueRef print_func = LLVMAddFunction(ptr->mod, "printf", printf_type);
     LLVMAddAttribute(LLVMGetFirstParam(print_func), LLVMNoAliasAttribute);
-    hash_put(ptr->globals, (void*)"print", print_func);
+    hash_put(ptr->globals, (void*) "print", print_func);
 }
 
 char* _get_module_name(const char* fname)

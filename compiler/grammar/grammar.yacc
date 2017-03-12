@@ -21,63 +21,91 @@
 
     Assembler assembler;
     //int yydebug = 1;
+
+
+    //statement: expr '\n' | assignment_expression | print_stm | return_statement;
+    //assignment_expression: IDENTIFIER '=' logical_or_expression '\n'
 %}
 
 %define parse.error verbose
 
 %union { \
-    int i; \
-    char* s; \
-    double d; \
+    int integer; \
+    char* str; \
+    double real; \
     Node node; \
     Parameter param; \
     LinkedList list; \
+    AbstractSyntacticTree* ast; \
 }
 
-%token<s> IDENTIFIER
-%token<i> INT
-%token<d> FLOAT
-%token<s> BOOLEAN
-%token<s> RETURN
+%token<str> IDENTIFIER
+%token<integer> INT
+%token<real> FLOAT
+%token<str> BOOLEAN
+%token<str> RETURN
 
-%token<s> PRINT
-%token<s> DEF
-%token<s> OR_OP
-%token<s> AND_OP
-%token<s> LE_OP
-%token<s> GE_OP
-%token<s> EQ_OP
-%token<s> NEQ_OP
-%token<s> NE_OP
+%token<str> PRINT
+%token<str> DEF
+%token<str> OR_OP
+%token<str> AND_OP
+%token<str> LE_OP
+%token<str> GE_OP
+%token<str> EQ_OP
+%token<str> NEQ_OP
+%token<str> NE_OP
 
-%type<node> postfix_expression primary_expression
+%type<node> postfix_expression
 %type<node> additive_expression multiplicative_expression expr
-%type<node> assignment_expression statement statement_list
 %type<node> relational_expression equality_expression
 %type<node> logical_and_expression logical_or_expression conditional_expression
-%type<node> print_stm function_definition return_statement
-%type<list> parameter_list argument_expression_list
+%type<node> print_stm return_statement
+
+%type<ast> function_definition statement
+%type<ast> assignment_expression primary_expression
+%type<list> parameter_list argument_expression_list function_list
+%type<list> statement_list function_body
 %type<param> parameter_declaration
 
 %start prog
 
 %%
 
-prog: function_definition | prog function_definition;
+prog: function_list
+    {
+        assembler_generate_functions(assembler, &$1);
+    };
+
+function_list:
+    function_definition
+    {
+        ll_init(&$$);
+        ll_insert(&$$, $1);
+    }
+    | function_list function_definition
+    {
+        $$ = $1;
+        ll_insert(&$$, $2);
+    };
 
 statement_list
     : statement
+    {
+        ll_init(&$$);
+        ll_insert(&$$, $1);
+    }
     | statement_list statement
     {
-        $$ = node_merge($1, $2);
+        $$ = $1;
+        ll_insert(&$$, $2);
     }
     ;
 
-statement: expr '\n' | assignment_expression | print_stm | return_statement;
+statement: assignment_expression;
 
-assignment_expression: IDENTIFIER '=' logical_or_expression '\n'
+assignment_expression: IDENTIFIER '=' postfix_expression '\n'
     {
-        $$ = assembler_produce_store_variable(assembler, $1, $3);
+        $$ = ast_assignment_expr($1, $3);
     }
     ;
 
@@ -86,27 +114,24 @@ expr: logical_or_expression;
 primary_expression
     : INT
     {
-        $$ = assembler_const_int(assembler, $1);
+        $$ = ast_const_int($1);
     }
     | FLOAT
     {
-        $$ = assembler_const_float(assembler, $1);
+        $$ = ast_const_float($1);
     }
     | BOOLEAN
     {
-        $$ = assembler_const_bool(assembler, $1);
+        $$ = ast_const_bool($1);
     }
     | '(' expr ')'
     {
-        $$ = $2;
+        //$$ = $2;
+        $$ = NULL;
     }
     | IDENTIFIER
     {
-        if (!assembler_is_defined(assembler, $1)) {
-            printf("Error at line %d: Undefined variable %s\n", yylineno, $1);
-            exit(-1);
-        }
-        $$ = assembler_produce_load_variable(assembler, $1);
+        $$ = ast_var_name($1);
     }
     | 
     ;
@@ -223,31 +248,24 @@ print_stm: PRINT expr '\n'
     }
     ;
 
-function_definition: DEF IDENTIFIER '(' ')' discardable_tokens '{' discardable_tokens statement_list discardable_tokens '}' discardable_tokens
+function_definition: DEF IDENTIFIER '(' parameter_list ')' function_body
     {
-        if (assembler_is_defined(assembler, $2)) {
-            printf("Error at line %d: identifier %s was previos defined!\n", yylineno, $2);
-            exit(-1);
-        }
-        LinkedList l;
-        l.cnt = 0;
-        assembler_produce_function(assembler, $2, $8, l);
+        $$ = ast_function_definition($2, ".void", &$4, &$6);
     }
-    | DEF IDENTIFIER '(' parameter_list ')' discardable_tokens '{' discardable_tokens statement_list discardable_tokens '}' discardable_tokens
+    | DEF IDENTIFIER '(' ')' function_body
     {
-        if (assembler_is_defined(assembler, $2)) {
-            printf("Error at line %d: identifier %s was previos defined!\n", yylineno, $2);
-            exit(-1);
-        }
-
-        if (ll_size(&$4) > 200) {
-            printf("Declaring a function with %d arguments! Please refactore this cheet code, so.\n", ll_size(&$4));
-            exit(-1);
-        }
-
-        assembler_produce_function(assembler, $2, $9, $4);
+        LinkedList l;
+        ll_init(&l);
+        $$ = ast_function_definition($2, ".void", &l, &$5);
     }
     ;
+
+function_body: discardable_tokens '{' discardable_tokens statement_list discardable_tokens '}' discardable_tokens
+    {
+        $$ = $4;
+    }
+    ;
+
 
 parameter_list
     : parameter_declaration
@@ -268,7 +286,7 @@ parameter_list
 
 parameter_declaration: IDENTIFIER IDENTIFIER
     {
-        $$.type = LLVMInt32Type();
+        $$.type = $1;
         $$.name = $2;
     }
     ;
@@ -310,7 +328,7 @@ epsilon: ;
         
         if (yyin) {
             assembler = assembler_init(argv[1]);
-            assembler_declare_printf(assembler);
+            assembler_declare_builtin(assembler);
             
             yyparse();
             fclose(yyin);

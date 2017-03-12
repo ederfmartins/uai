@@ -62,5 +62,5 @@ sanit_test:
 	gcc experiments/sanit_test.c $(LDFLAGS) -o test
 
 gen_code:
-	clang -S -emit-llvm tests/code_snipets.c
+	clang -S -emit-llvm experiments/code_snipets.c
 	llc -march=cpp code_snipets.ll

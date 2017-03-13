@@ -1,0 +1,11 @@
+def main()
+{
+    a = 10.
+    b = 3. + 2. * a
+    print b
+    c = (b - 5.) * (15. - a)
+    print c
+    print a * b
+    print b / a
+    print b % a
+}

@@ -1,0 +1,29 @@
+def void_x() {
+    3 + 2
+}
+
+def int plus_2(int x) {
+    return x + 2
+}
+
+def func(int x, double y, boolean z, int another_int) {
+    print x
+    print y
+    print z
+    print another_int
+}
+
+def double ret_42()
+{
+    return 42.
+}
+
+def main()
+{
+    x = 1
+    y = plus_2(x)
+    print y
+    void_x()
+    func(x, 1.45, false, y)
+    print ret_42()
+}

@@ -13,7 +13,7 @@ LDFLAGS=-lLLVM-3.8 `llvm-config --cxxflags --ldflags --libs core executionengine
 all: lex-gen yacc-gen compile
 
 
-compile: lexer.o yacc.o assembler_core.o
+compile: lexer.o yacc.o ast_node.o assembler_core.o
 	$(LD) *.o $(LDFLAGS) -o uai
 
 test: compile
@@ -29,6 +29,9 @@ yacc-gen:
 	yacc -dtv grammar/grammar.yacc -o grammar/grammar.c
 
 yacc.o: grammar/grammar.c hash.o str.o list.o
+	$(CC) $(CFLAGS) -c $<
+
+ast_node.o: grammar/ast_node.c
 	$(CC) $(CFLAGS) -c $<
 
 hash.o: collections/hash.c util.o vector.o
@@ -50,7 +53,7 @@ assembler_core.o: assembler/core.c
 	$(CC) $(CFLAGS) -c $<
 
 clean:
-	-rm -f *.o *.bc *.ll
+	-rm -f *.o *.bc *.ll tests/*.bc tests/*.ll tests/*.out
 
 install_dependencies:
 	sudo apt-get install flex bison clang-3.8
@@ -59,5 +62,5 @@ sanit_test:
 	gcc experiments/sanit_test.c $(LDFLAGS) -o test
 
 gen_code:
-	clang -S -emit-llvm tests/code_snipets.c
+	clang -S -emit-llvm experiments/code_snipets.c
 	llc -march=cpp code_snipets.ll

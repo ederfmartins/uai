@@ -1,6 +1,0 @@
-a = 10
-b = 3 + 2 * a
-print b
-c = b - 5
-print c
-print a * b

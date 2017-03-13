@@ -1,2 +1,6 @@
+def main() {
 print 0.5
 print 2
+print true
+print false
+}

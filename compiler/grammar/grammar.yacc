@@ -1,4 +1,5 @@
 %{
+    //#define YYDEBUG 1
     #include "../grammar/ast_node.h"
     #include "../assembler/core.h"
 
@@ -19,71 +20,105 @@
     void yyerror(const char *str);
 
     Assembler assembler;
+    //int yydebug = 1;
+
 %}
 
 %define parse.error verbose
 
-%union { int i; char* s; double d; Node node;}
+%union { \
+    int integer; \
+    char* str; \
+    double real; \
+    Parameter param; \
+    LinkedList list; \
+    AbstractSyntacticTree* ast; \
+}
 
-%token<s> IDENTIFIER
-%token<i> INT
-%token<d> FLOAT
-%token<s> BOOLEAN
+%token<str> IDENTIFIER
+%token<integer> INT
+%token<real> FLOAT
+%token<str> BOOLEAN
+%token<str> RETURN
 
-%token<s> PRINT
-%token<s> DEF
-%token<s> OR_OP
-%token<s> AND_OP
-%token<s> LE_OP
-%token<s> GE_OP
-%token<s> EQ_OP
-%token<s> NEQ_OP
-%token<s> NE_OP
+%token<str> PRINT
+%token<str> DEF
+%token<str> OR_OP
+%token<str> AND_OP
+%token<str> LE_OP
+%token<str> GE_OP
+%token<str> EQ_OP
+%token<str> NEQ_OP
+%token<str> NE_OP
 
-%type<node> additive_expression multiplicative_expression const_expression expr
-%type<node> assignment_expression statement statement_list
-%type<node> relational_expression equality_expression
-%type<node> logical_and_expression logical_or_expression conditional_expression
-%type<node> print_stm function_definition
+%type<ast> additive_expression multiplicative_expression expr
+%type<ast> relational_expression equality_expression
+%type<ast> logical_and_expression logical_or_expression conditional_expression
+%type<ast> print_stm return_statement
+
+%type<ast> postfix_expression
+%type<ast> function_definition statement
+%type<ast> assignment_expression primary_expression
+%type<list> parameter_list argument_expression_list function_list
+%type<list> statement_list function_body
+%type<param> parameter_declaration
 
 %start prog
 
 %%
 
-prog: function_definition | prog function_definition;
+prog: function_list
+    {
+        assembler_generate_functions(assembler, &$1);
+    };
+
+function_list:
+    function_definition
+    {
+        ll_init(&$$);
+        ll_insert(&$$, $1);
+    }
+    | function_list function_definition
+    {
+        $$ = $1;
+        ll_insert(&$$, $2);
+    };
 
 statement_list
     : statement
+    {
+        ll_init(&$$);
+        ll_insert(&$$, $1);
+    }
     | statement_list statement
     {
-        ll_transfer(&$1.instructions_list, &$2.instructions_list);
-        ll_destroy(&$2.instructions_list);
         $$ = $1;
+        ll_insert(&$$, $2);
     }
     ;
 
-statement: expr '\n' | assignment_expression | print_stm;
+statement: expr '\n' | assignment_expression | print_stm | return_statement;
 
-assignment_expression: IDENTIFIER '=' logical_or_expression '\n'
+assignment_expression: IDENTIFIER '=' expr '\n'
     {
-        $$ = assembler_produce_store_variable(assembler, $1, $3);
+        $$ = ast_assignment_expr($1, $3);
     }
     ;
 
 expr: logical_or_expression;
 
-const_expression
+primary_expression
     : INT
     {
-        $$ = assembler_const_int(assembler, $1);
+        $$ = ast_const_int($1);
     }
     | FLOAT
     {
-        $$ = assembler_const_float(assembler, $1);
+        $$ = ast_const_float($1);
     }
     | BOOLEAN
     {
-        $$ = assembler_const_bool(assembler, $1);
+        $$ = ast_const_bool($1);
     }
     | '(' expr ')'
     {
@@ -91,27 +126,49 @@ const_expression
     }
     | IDENTIFIER
     {
-        if (!assembler_is_defined(assembler, $1)) {
-            printf("Error at line %d: Undefined variable %s\n", yylineno, $1);
-            exit(-1);
-        }
-        $$ = assembler_produce_load_variable(assembler, $1);
+        $$ = ast_var_name($1);
+    }
+    | 
+    ;
+
+postfix_expression
+    : primary_expression
+    | IDENTIFIER '(' ')'
+    {
+        $$ = ast_function_call($1, NULL);
+    }
+    | IDENTIFIER '('argument_expression_list')'
+    {
+        $$ = ast_function_call($1, &$3);
+    }
+    ;
+
+argument_expression_list
+    : expr
+    {
+        ll_init(&$$);
+        ll_insert(&$$, $1);
+    }
+    | argument_expression_list ',' expr
+    {
+        ll_insert(&$1, $3);
+        $$ = $1;
     }
     ;
 
 multiplicative_expression
-    : const_expression
-    | multiplicative_expression '*' const_expression
+    : postfix_expression
+    | multiplicative_expression '*' postfix_expression
     {
-        $$ = exec_op(assembler, $1, $3, '*');
+        $$ = binary_expr(MUL, $1, $3);
     }
-    | multiplicative_expression '/' const_expression
+    | multiplicative_expression '/' postfix_expression
     {
-        $$ = exec_op(assembler, $1, $3, '/');
+        $$ = binary_expr(DIV, $1, $3);
     }
-    | multiplicative_expression '%' const_expression
+    | multiplicative_expression '%' postfix_expression
     {
-        $$ = exec_op(assembler, $1, $3, '%');
+        $$ = binary_expr(MOD, $1, $3);
     }
     ;
 
@@ -119,26 +176,26 @@ additive_expression
     : multiplicative_expression
     | additive_expression '+' multiplicative_expression
     {
-        $$ = exec_op(assembler, $1, $3, '+');
+        $$ = binary_expr(PLUS, $1, $3);
     }
     | additive_expression '-' multiplicative_expression
     {
-        $$ = exec_op(assembler, $1, $3, '-');
+        $$ = binary_expr(MINUS, $1, $3);
     }
     ;
 
 relational_expression
     : additive_expression
-    | relational_expression '<' additive_expression {$$ = exec_op(assembler, $1, $3, '<');}
-    | relational_expression '>' additive_expression {$$ = exec_op(assembler, $1, $3, '>');}
-    | relational_expression LE_OP additive_expression {$$ = exec_op(assembler, $1, $3, 'l');}
-    | relational_expression GE_OP additive_expression {$$ = exec_op(assembler, $1, $3, 'g');}
+    | relational_expression '<' additive_expression {$$ = binary_expr(LT, $1, $3);}
+    | relational_expression '>' additive_expression {$$ = binary_expr(GT, $1, $3);}
+    | relational_expression LE_OP additive_expression {$$ = binary_expr(LTE, $1, $3);}
+    | relational_expression GE_OP additive_expression {$$ = binary_expr(GTE, $1, $3);}
     ;
 
 equality_expression
     : relational_expression
-    | equality_expression EQ_OP relational_expression {$$ = exec_op(assembler, $1, $3, '=');}
-    | equality_expression NE_OP relational_expression {$$ = exec_op(assembler, $1, $3, '!');}
+    | equality_expression EQ_OP relational_expression {$$ = binary_expr(EQ, $1, $3);}
+    | equality_expression NE_OP relational_expression {$$ = binary_expr(NEQ, $1, $3);}
     ;
 
 logical_and_expression
@@ -153,13 +210,75 @@ logical_or_expression
 
 print_stm: PRINT expr '\n'
     {
-        $$ = assembler_produce_print(assembler, $2);
+        $$ = ast_print($2);
     }
     ;
 
-function_definition: DEF IDENTIFIER '(' ')' discardable_tokens '{' discardable_tokens statement_list discardable_tokens '}' discardable_tokens
+function_definition: DEF IDENTIFIER '(' parameter_list ')' function_body
     {
-        assembler_produce_function(assembler, $2, $8);
+        $$ = ast_function_definition($2, ".void", &$4, &$6);
+    }
+    | DEF IDENTIFIER '(' ')' function_body
+    {
+        LinkedList l;
+        ll_init(&l);
+        $$ = ast_function_definition($2, ".void", &l, &$5);
+    }
+    | DEF IDENTIFIER IDENTIFIER '(' ')' function_body
+    {
+        LinkedList l;
+        ll_init(&l);
+        $$ = ast_function_definition($3, $2, &l, &$6);
+    }
+    | DEF IDENTIFIER IDENTIFIER '(' parameter_list ')' function_body
+    {
+        $$ = ast_function_definition($3, $2, &$5, &$7);
+    }
+    ;
+
+function_body: discardable_tokens '{' discardable_tokens statement_list discardable_tokens '}' discardable_tokens
+    {
+        $$ = $4;
+    }
+    | discardable_tokens '{' discardable_tokens '}' discardable_tokens
+    {
+        ll_init(&$$);
+    }
+    ;
+
+
+parameter_list
+    : parameter_declaration
+    {
+        ll_init(&$$);
+        Parameter *p = (Parameter*) malloc(sizeof(Parameter));
+        *p = $1;
+        ll_insert(&$$, p);
+    }
+    | parameter_list ',' parameter_declaration
+    {
+        $$ = $1;
+        Parameter *p = (Parameter*) malloc(sizeof(Parameter));
+        *p = $3;
+        ll_insert(&$$, p);
+    }
+    ;
+
+parameter_declaration: IDENTIFIER IDENTIFIER
+    {
+        $$.type = $1;
+        $$.name = $2;
+    }
+    ;
+
+return_statement
+    : RETURN '\n'
+    {
+        $$ = ast_return(NULL);
+    }
+    | RETURN expr '\n'
+    {
+        $$ = ast_return($2);
     }
     ;
 
@@ -189,7 +308,6 @@ epsilon: ;
         
         if (yyin) {
             assembler = assembler_init(argv[1]);
-            assembler_declare_printf(assembler);
             
             yyparse();
             fclose(yyin);

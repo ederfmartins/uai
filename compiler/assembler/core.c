@@ -93,7 +93,8 @@ void assembler_generate_functions(Assembler assembler, LinkedList* func_list)
     {
         AbstractSyntacticTree* func = nl_getValue(node);
         assembler_generate_function(assembler, &func->value.func_def);
-        function_node_destroy(&func->value.func_def);
+        //function_node_destroy(&func->value.func_def);
+        ast_destroy(func);
     }
 
     ll_destroy(func_list);
@@ -347,7 +348,6 @@ void assembler_generate_function(Assembler assembler, FunctionNode* func_def)
             AbstractSyntacticTree* inst = nl_getValue(node);
             if (inst->production == RET_EXPR) has_return = 1;
             _gen_statement(ptr, inst);
-            free(inst);
         }
 
         if (! has_return) {
@@ -362,8 +362,6 @@ void assembler_generate_function(Assembler assembler, FunctionNode* func_def)
         hash_destroy(ptr->locals);
         ptr->locals = hash_create(100, 0.75, (_COMPARE*) str_compare, (_HASH_CODE*) str_hash_code, NULL, NULL, NULL, NULL);
     }
-
-    ll_destroy(&func_def->body);
 }
 
 LLVMValueRef _gen_binary_operation(Assembler ptr, BinaryOperator op,

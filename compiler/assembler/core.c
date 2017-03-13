@@ -132,6 +132,12 @@ void assembler_declare_function(Assembler assembler, FunctionNode* func_def)
     LLVMTypeRef ret_type = hash_get(ptr->globals, (void*) func_def->ret_type);
     LLVMTypeRef ftype = LLVMFunctionType(ret_type, args, num_parans, func_def->is_vararg);
     LLVMValueRef func = LLVMAddFunction(ptr->mod, func_def->func_name, ftype);
+
+    // if (ret_type == LLVMVoidType()) {
+    //     LLVMAddFunctionAttr(func, LLVMNoUnwindAttribute);
+    //     LLVMAddFunctionAttr(func, LLVMUWTable);
+    // }
+
     hash_put(ptr->globals, (void*) func_def->func_name, func);
 
     free(args);
@@ -214,7 +220,18 @@ LLVMValueRef _gen_func_call(Assembler_str* ptr, AbstractSyntacticTree* func)
     }
 
     LLVMValueRef f = _assembler_lookup(ptr, func->value.func_def.func_name);
-    LLVMValueRef call_func = LLVMBuildCall(ptr->builder, f, args, ll_size(exprs), ".ret");
+    LLVMValueRef call_func;
+
+    // LLVMDumpType(LLVMGetReturnType(LLVMTypeOf(f)));
+    // LLVMDumpType(LLVMTypeOf(f));
+    // LLVMDumpType(LLVMGetReturnType(LLVMGetReturnType(LLVMTypeOf(f))));
+    if (LLVMGetReturnType(LLVMGetReturnType(LLVMTypeOf(f))) == LLVMVoidType())
+    {
+        call_func = LLVMBuildCall(ptr->builder, f, args, ll_size(exprs), "");
+    } else {
+        call_func = LLVMBuildCall(ptr->builder, f, args, ll_size(exprs), ".ret");
+    }
+
     free(args);
     return call_func;
 }
@@ -373,7 +390,8 @@ LLVMValueRef _gen_binary_operation(Assembler ptr, BinaryOperator op,
             else llvm = LLVMBuildSDiv(ptr->builder, left, right, ".tmp");
             break;
         case MOD:
-            llvm = LLVMBuildSRem(ptr->builder, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFRem(ptr->builder, left, right, ".tmp");
+            else llvm = LLVMBuildSRem(ptr->builder, left, right, ".tmp");
             break;
         case GT:
             if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, left, right, ".tmp");

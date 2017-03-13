@@ -240,6 +240,10 @@ function_body: discardable_tokens '{' discardable_tokens statement_list discarda
     {
         $$ = $4;
     }
+    | discardable_tokens '{' discardable_tokens '}' discardable_tokens
+    {
+        ll_init(&$$);
+    }
     ;
 
 

@@ -21,11 +21,14 @@ LLVMValueRef _assembler_create_gconst_str(Assembler assembler, const char* name,
 char* _get_module_name(const char* fname);
 void _assembler_declare_builtin(Assembler assembler);
 void assembler_declare_printf(Assembler assembler);
+LLVMTypeRef _get_function_ret_type(LLVMValueRef func);
 
 // code gen privete functions
 LLVMValueRef _gen_expr(Assembler_str* ptr, AbstractSyntacticTree* expr);
 LLVMValueRef _gen_binary_operation(Assembler ptr, BinaryOperator op,
     LLVMValueRef left, LLVMValueRef right);
+LLVMValueRef _gen_statement(
+    Assembler_str* ptr, AbstractSyntacticTree* inst, LLVMValueRef cur_func);
 
 Assembler assembler_init(const char* module_name)
 {
@@ -226,7 +229,7 @@ LLVMValueRef _gen_func_call(Assembler_str* ptr, AbstractSyntacticTree* func)
     // LLVMDumpType(LLVMGetReturnType(LLVMTypeOf(f)));
     // LLVMDumpType(LLVMTypeOf(f));
     // LLVMDumpType(LLVMGetReturnType(LLVMGetReturnType(LLVMTypeOf(f))));
-    if (LLVMGetReturnType(LLVMGetReturnType(LLVMTypeOf(f))) == LLVMVoidType())
+    if (_get_function_ret_type(f) == LLVMVoidType())
     {
         call_func = LLVMBuildCall(ptr->builder, f, args, ll_size(exprs), "");
     } else {
@@ -275,14 +278,6 @@ void _gen_assigment_expr(Assembler_str* ptr, AbstractSyntacticTree* inst)
     LLVMBuildStore(ptr->builder, llvm, var);
 }
 
-LLVMValueRef _gen_return(Assembler_str* ptr, AbstractSyntacticTree* ret)
-{
-    if (ret->value.interior.left == NULL)
-        return LLVMBuildRetVoid(ptr->builder);
-    LLVMValueRef expr = _gen_expr(ptr, ret->value.interior.left);
-    return LLVMBuildRet(ptr->builder, expr);
-}
-
 LLVMValueRef _gen_print(Assembler ptr, AbstractSyntacticTree* print_stm)
 {
     LLVMValueRef expr = _gen_expr(ptr, print_stm->value.interior.left);
@@ -301,7 +296,61 @@ LLVMValueRef _gen_print(Assembler ptr, AbstractSyntacticTree* print_stm)
     return LLVMBuildCall(ptr->builder, print, args, 2, ".print");
 }
 
-void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst)
+LLVMValueRef _gen_return(Assembler_str* ptr, AbstractSyntacticTree* ret)
+{
+    if (ret->value.interior.left == NULL)
+        return LLVMBuildRetVoid(ptr->builder);
+    LLVMValueRef expr = _gen_expr(ptr, ret->value.interior.left);
+    //return LLVMBuildRet(ptr->builder, expr);
+    return expr;
+}
+
+LLVMValueRef _gen_if(
+    Assembler_str* ptr, AbstractSyntacticTree* inst, LLVMValueRef cur_func)
+{
+    LLVMValueRef condition = _gen_expr(ptr, inst->value.tnode.cond);
+    LLVMBasicBlockRef iftrue = LLVMAppendBasicBlock(cur_func, ".iftrue");
+    LLVMBasicBlockRef iffalse = LLVMAppendBasicBlock(cur_func, ".iffalse");
+    LLVMBasicBlockRef end = LLVMAppendBasicBlock(cur_func, ".end");
+    LLVMBuildCondBr(ptr->builder, condition, iftrue, iffalse);
+    LLVMValueRef res_iftrue, res_iffalse, r;
+
+    LLVMPositionBuilderAtEnd(ptr->builder, iftrue);
+    for (NodeList* node = ll_iter_begin(&inst->value.tnode.left);
+         node != ll_iter_end(&inst->value.tnode.left);
+         node = ll_iter_next(node))
+    {
+        AbstractSyntacticTree* inst1 = nl_getValue(node);
+        r = _gen_statement(ptr, inst1, cur_func);
+        if (r != 0) res_iftrue = r;
+    }
+    LLVMBuildBr(ptr->builder, end);
+
+    LLVMPositionBuilderAtEnd(ptr->builder, iffalse);
+    for (NodeList* node = ll_iter_begin(&inst->value.tnode.right);
+         node != ll_iter_end(&inst->value.tnode.right);
+         node = ll_iter_next(node))
+    {
+        AbstractSyntacticTree* inst1 = nl_getValue(node);
+        r = _gen_statement(ptr, inst1, cur_func);
+        if (r != 0) res_iffalse = r;
+    }
+    LLVMBuildBr(ptr->builder, end);
+
+    LLVMPositionBuilderAtEnd(ptr->builder, end);
+    LLVMValueRef res = LLVMBuildPhi(
+        ptr->builder, _get_function_ret_type(cur_func), ".result");
+    LLVMValueRef phi_vals[] = {res_iftrue, res_iffalse};
+    LLVMBasicBlockRef phi_blocks[] = {iftrue, iffalse};
+    LLVMAddIncoming(res, phi_vals, phi_blocks, 2);
+    //LLVMBuildRet(ptr->builder, res);
+    //LLVMBasicBlockAsValue
+    return res;
+}
+
+/*Return the return instruction of the current block*/
+LLVMValueRef _gen_statement(
+    Assembler_str* ptr, AbstractSyntacticTree* inst, LLVMValueRef cur_func)
 {
     switch (inst->production)
     {
@@ -309,10 +358,13 @@ void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst)
             _gen_assigment_expr(ptr, inst);
         break;
         case RET_EXPR:
-            _gen_return(ptr, inst);
+            return _gen_return(ptr, inst);
         break;
         case PRINT_STM:
             _gen_print(ptr, inst);
+        break;
+        case IF_STM:
+            return _gen_if(ptr, inst, cur_func);
         break;
         case B_EXPR:
         case CONST_INT:
@@ -323,10 +375,12 @@ void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst)
             _gen_expr(ptr, inst);
         break;
         default:
-            printf("Not implemented yet\n");
+            printf("_gen_statement: Not implemented yet \n");
             exit(-1);
         break;
     }
+    LLVMValueRef r = 0;
+    return r;
 }
 
 void assembler_generate_function(Assembler assembler, FunctionNode* func_def)
@@ -339,24 +393,25 @@ void assembler_generate_function(Assembler assembler, FunctionNode* func_def)
         LLVMPositionBuilderAtEnd(ptr->builder, entry);
         _add_params_to_locals(ptr, func, &func_def->parameters);
         LinkedList instructions = func_def->body;
-        int has_return = 0;
+        LLVMValueRef ret_value = 0, r;
 
         for (NodeList* node = ll_iter_begin(&instructions);
             node != ll_iter_end(&instructions);
             node = ll_iter_next(node))
         {
             AbstractSyntacticTree* inst = nl_getValue(node);
-            if (inst->production == RET_EXPR) has_return = 1;
-            _gen_statement(ptr, inst);
+            r = _gen_statement(ptr, inst, func);
+            if (r != 0) ret_value = r;
         }
 
-        if (! has_return) {
-            if (strcmp(".void", func_def->ret_type) == 0)
-                LLVMBuildRetVoid(ptr->builder);
-            else {
-                printf("%s has no return! Expected %s\n", func_def->func_name, func_def->ret_type);
-                exit(-1);
-            }
+        if (strcmp(".void", func_def->ret_type) == 0)
+            LLVMBuildRetVoid(ptr->builder);
+        else if (ret_value != 0) {
+            LLVMBuildRet(ptr->builder, ret_value);
+        }
+        else {
+            printf("%s has no return! Expected %s\n", func_def->func_name, func_def->ret_type);
+            exit(-1);
         }
 
         hash_destroy(ptr->locals);
@@ -481,4 +536,9 @@ int assembler_is_defined(Assembler assembler, const char* identifier)
 {
     Assembler_str* ptr = (Assembler_str*) assembler;
     return hash_contains_key(ptr->globals, (void*) identifier) || hash_contains_key(ptr->locals, (void*) identifier);
+}
+
+LLVMTypeRef _get_function_ret_type(LLVMValueRef func)
+{
+    return LLVMGetReturnType(LLVMGetReturnType(LLVMTypeOf(func)));
 }

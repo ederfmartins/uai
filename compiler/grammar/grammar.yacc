@@ -35,14 +35,15 @@
     AbstractSyntacticTree* ast; \
 }
 
-%token<str> IDENTIFIER
 %token<integer> INT
 %token<real> FLOAT
 %token<str> BOOLEAN
 %token<str> RETURN
-
 %token<str> PRINT
 %token<str> DEF
+%token<str> IF
+%token<str> ELSE
+
 %token<str> OR_OP
 %token<str> AND_OP
 %token<str> LE_OP
@@ -50,6 +51,7 @@
 %token<str> EQ_OP
 %token<str> NEQ_OP
 %token<str> NE_OP
+%token<str> IDENTIFIER
 
 %type<ast> additive_expression multiplicative_expression expr
 %type<ast> relational_expression equality_expression
@@ -57,10 +59,10 @@
 %type<ast> print_stm return_statement
 
 %type<ast> postfix_expression
-%type<ast> function_definition statement
+%type<ast> function_definition statement if_statement
 %type<ast> assignment_expression primary_expression
 %type<list> parameter_list argument_expression_list function_list
-%type<list> statement_list function_body
+%type<list> statement_list function_body compound_statement
 %type<param> parameter_declaration
 
 %start prog
@@ -97,7 +99,12 @@ statement_list
     }
     ;
 
-statement: expr '\n' dt | assignment_expression | print_stm | return_statement;
+statement
+    : expr '\n' dt 
+    | assignment_expression 
+    | print_stm 
+    | return_statement
+    | if_statement dt;
 
 assignment_expression: IDENTIFIER '=' expr '\n' dt
     {
@@ -281,6 +288,29 @@ return_statement
         $$ = ast_return($2);
     }
     ;
+
+compound_statement
+    : '{' dt statement_list '}' dt
+    {
+        $$ = $3;
+    }
+    | statement
+    {
+        ll_init(&$$);
+        ll_insert(&$$, $1);
+    }
+
+if_statement
+    : IF expr dt compound_statement
+    {
+        LinkedList l;
+        ll_init(&l);
+        $$ = ast_if($2, $4, l);
+    }
+    | IF expr dt compound_statement ELSE dt compound_statement
+    {
+        $$ = ast_if($2, $4, $7);
+    }
 
 dt: discardable | epsilon;
 

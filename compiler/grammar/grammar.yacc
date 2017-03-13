@@ -97,9 +97,9 @@ statement_list
     }
     ;
 
-statement: expr '\n' | assignment_expression | print_stm | return_statement;
+statement: expr '\n' dt | assignment_expression | print_stm | return_statement;
 
-assignment_expression: IDENTIFIER '=' expr '\n'
+assignment_expression: IDENTIFIER '=' expr '\n' dt
     {
         $$ = ast_assignment_expr($1, $3);
     }
@@ -149,47 +149,47 @@ argument_expression_list
         ll_init(&$$);
         ll_insert(&$$, $1);
     }
-    | argument_expression_list ',' expr
+    | argument_expression_list ',' dt expr
     {
-        ll_insert(&$1, $3);
+        ll_insert(&$1, $4);
         $$ = $1;
     }
     ;
 
 multiplicative_expression
     : postfix_expression
-    | multiplicative_expression '*' postfix_expression
+    | multiplicative_expression '*' dt postfix_expression
     {
-        $$ = binary_expr(MUL, $1, $3);
+        $$ = binary_expr(MUL, $1, $4);
     }
-    | multiplicative_expression '/' postfix_expression
+    | multiplicative_expression '/' dt postfix_expression
     {
-        $$ = binary_expr(DIV, $1, $3);
+        $$ = binary_expr(DIV, $1, $4);
     }
-    | multiplicative_expression '%' postfix_expression
+    | multiplicative_expression '%' dt postfix_expression
     {
-        $$ = binary_expr(MOD, $1, $3);
+        $$ = binary_expr(MOD, $1, $4);
     }
     ;
 
 additive_expression
     : multiplicative_expression
-    | additive_expression '+' multiplicative_expression
+    | additive_expression '+' dt multiplicative_expression
     {
-        $$ = binary_expr(PLUS, $1, $3);
+        $$ = binary_expr(PLUS, $1, $4);
     }
-    | additive_expression '-' multiplicative_expression
+    | additive_expression '-' dt multiplicative_expression
     {
-        $$ = binary_expr(MINUS, $1, $3);
+        $$ = binary_expr(MINUS, $1, $4);
     }
     ;
 
 relational_expression
     : additive_expression
-    | relational_expression '<' additive_expression {$$ = binary_expr(LT, $1, $3);}
-    | relational_expression '>' additive_expression {$$ = binary_expr(GT, $1, $3);}
-    | relational_expression LE_OP additive_expression {$$ = binary_expr(LTE, $1, $3);}
-    | relational_expression GE_OP additive_expression {$$ = binary_expr(GTE, $1, $3);}
+    | relational_expression '<' dt additive_expression {$$ = binary_expr(LT, $1, $4);}
+    | relational_expression '>' dt additive_expression {$$ = binary_expr(GT, $1, $4);}
+    | relational_expression LE_OP dt additive_expression {$$ = binary_expr(LTE, $1, $4);}
+    | relational_expression GE_OP dt additive_expression {$$ = binary_expr(GTE, $1, $4);}
     ;
 
 equality_expression
@@ -236,11 +236,11 @@ function_definition: DEF IDENTIFIER '(' parameter_list ')' function_body
     }
     ;
 
-function_body: discardable_tokens '{' discardable_tokens statement_list discardable_tokens '}' discardable_tokens
+function_body: dt '{' dt statement_list dt '}' dt
     {
         $$ = $4;
     }
-    | discardable_tokens '{' discardable_tokens '}' discardable_tokens
+    | dt '{' dt '}' dt
     {
         ll_init(&$$);
     }
@@ -282,7 +282,7 @@ return_statement
     }
     ;
 
-discardable_tokens: discardable | epsilon;
+dt: discardable | epsilon;
 
 discardable: discardable  discardable_token | discardable_token;
 

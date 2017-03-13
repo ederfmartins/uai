@@ -78,7 +78,7 @@ typedef struct
 
 
 AbstractSyntacticTree* ast_init();
-void function_node_destroy(FunctionNode* func);
+void ast_destroy(AbstractSyntacticTree* ast);
 
 // Top productions
 AbstractSyntacticTree* binary_expr(BinaryOperator op,

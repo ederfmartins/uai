@@ -15,6 +15,69 @@ AbstractSyntacticTree* ast_init()
    return t;
 }
 
+void function_node_destroy(FunctionNode* func, int free_params)
+{
+    /*
+    TODO: verify the ownership off there variables
+    const char* func_name;
+    const char* ret_type;
+    */
+    //printf("Destroy %s %d\n", func->func_name, ll_size(&func->body));
+    for (NodeList* node = ll_iter_begin(&func->body);
+        node != ll_iter_end(&func->body);
+        node = ll_iter_next(node))
+    {
+        ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
+    }
+    if (free_params)
+    {
+        for (NodeList* node = ll_iter_begin(&func->parameters);
+        node != ll_iter_end(&func->parameters);
+        node = ll_iter_next(node))
+        {
+            ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
+        }
+    }
+
+    ll_destroy(&func->parameters);
+    ll_destroy(&func->body);
+}
+
+void ast_destroy(AbstractSyntacticTree* ast)
+{
+    if (ast == NULL) return;
+    //printf("Destroy... %d\n", ast->production);
+    switch (ast->production)
+    {
+        case FUNC_DEF:
+            function_node_destroy(&ast->value.func_def, 0);
+        break;
+        case FUNC_CALL:
+            function_node_destroy(&ast->value.func_def, 1);
+        break;
+        case ASSIGN_EXPR:
+            free(ast->value.interior.left);
+            ast_destroy(ast->value.interior.right);
+            break;
+        case PRINT_STM:
+        case RET_EXPR:
+        case B_EXPR:
+            ast_destroy(ast->value.interior.right);
+            ast_destroy(ast->value.interior.left);
+        break;
+        case CONST_INT:
+        case CONST_REAL:
+        case CONST_BOOL:
+        case VAR_NAME:
+        break;
+        default:
+            printf("Not implemented yet!\n");
+            exit(-1);
+    }
+
+    free(ast);
+}
+
 AbstractSyntacticTree* ast_interior(Production op,
     AbstractSyntacticTree* left, AbstractSyntacticTree* right)
 {
@@ -23,17 +86,6 @@ AbstractSyntacticTree* ast_interior(Production op,
     ast->value.interior.left = left;
     ast->value.interior.right = right;
     return ast;
-}
-
-void function_node_destroy(FunctionNode* func)
-{
-    /*
-    TODO: verify the ownership off there variables
-    const char* func_name;
-    const char* ret_type;
-    LinkedList* parameters;
-    struct tree_node* body;
-    */
 }
 
 AbstractSyntacticTree* binary_expr(BinaryOperator op,
@@ -70,6 +122,7 @@ AbstractSyntacticTree* ast_function_call(
     ast->value.func_def.ret_type = NULL;
     if (parameters) ast->value.func_def.parameters = *parameters;
     else ll_init(&ast->value.func_def.parameters);
+    ll_init(&ast->value.func_def.body);
     return ast;
 }
 

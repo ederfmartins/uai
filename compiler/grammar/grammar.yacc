@@ -100,13 +100,14 @@ statement_list
     ;
 
 statement
-    : expr '\n' dt 
-    | assignment_expression 
-    | print_stm 
-    | return_statement
-    | if_statement dt;
+    : expr '\n' dt
+    | assignment_expression dt
+    | print_stm dt
+    | return_statement dt
+    | if_statement dt
+    ;
 
-assignment_expression: IDENTIFIER '=' expr '\n' dt
+assignment_expression: IDENTIFIER '=' expr '\n'
     {
         $$ = ast_assignment_expr($1, $3);
     }

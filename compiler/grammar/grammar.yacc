@@ -46,10 +46,10 @@
 
 %token<str> OR_OP
 %token<str> AND_OP
+%token<str> NOT_OP
 %token<str> LE_OP
 %token<str> GE_OP
 %token<str> EQ_OP
-%token<str> NEQ_OP
 %token<str> NE_OP
 %token<str> IDENTIFIER
 
@@ -208,12 +208,12 @@ equality_expression
 
 logical_and_expression
     : equality_expression
-    | logical_and_expression AND_OP equality_expression
+    | logical_and_expression AND_OP equality_expression {$$ = binary_expr(NEQ, $1, $3);}
     ;
 
 logical_or_expression
     : logical_and_expression
-    | logical_or_expression OR_OP logical_and_expression
+    | logical_or_expression OR_OP logical_and_expression {$$ = binary_expr(NEQ, $1, $3);}
     ;
 
 print_stm: PRINT expr '\n'

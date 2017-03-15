@@ -35,7 +35,7 @@ else                  { return ELSE; }
 "<="                  { return LE_OP; }
 ">="                  { return GE_OP; }
 "=="                  { return EQ_OP; }
-"!="                  { return NEQ_OP; }
+"!="                  { return NE_OP; }
 \+                  { return '+'; }
 \-                  { return '-'; }
 \*                  { return '*'; }

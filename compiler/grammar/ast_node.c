@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+void ast_if_destroy(AbstractSyntacticTree* ast, int free_ast);
+
 AbstractSyntacticTree* ast_init()
 {
    AbstractSyntacticTree* t = (AbstractSyntacticTree*) malloc (sizeof(AbstractSyntacticTree));
@@ -59,6 +61,9 @@ void ast_destroy(AbstractSyntacticTree* ast)
             free(ast->value.interior.left);
             ast_destroy(ast->value.interior.right);
             break;
+        case IF_STM:
+            ast_if_destroy(ast, 0);
+        break;
         case PRINT_STM:
         case RET_EXPR:
         case B_EXPR:
@@ -71,7 +76,7 @@ void ast_destroy(AbstractSyntacticTree* ast)
         case VAR_NAME:
         break;
         default:
-            printf("Not implemented yet!\n");
+            printf("ast_destroy: Not implemented yet!\n");
             exit(-1);
     }
 
@@ -176,4 +181,38 @@ AbstractSyntacticTree* ast_assignment_expr(
     left->production = UNDEFINED;
     left->value.leaf.str = identifier;
     return ast_interior(ASSIGN_EXPR, left, right);
+}
+
+AbstractSyntacticTree* ast_if(AbstractSyntacticTree* cond,
+    LinkedList then, LinkedList elsee)
+{
+    AbstractSyntacticTree* ast = ast_init();
+    ast->production = IF_STM;
+    ast->value.tnode.cond = cond;
+    ast->value.tnode.left = then;
+    ast->value.tnode.right = elsee;
+    return ast;
+}
+
+void ast_if_destroy(AbstractSyntacticTree* ast, int free_ast)
+{
+    for (NodeList* node = ll_iter_begin(&ast->value.tnode.left);
+        node != ll_iter_end(&ast->value.tnode.left);
+        node = ll_iter_next(node))
+    {
+        ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
+    }
+
+    for (NodeList* node = ll_iter_begin(&ast->value.tnode.right);
+        node != ll_iter_end(&ast->value.tnode.right);
+        node = ll_iter_next(node))
+    {
+        ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
+    }
+
+    ll_destroy(&ast->value.tnode.right);
+    ll_destroy(&ast->value.tnode.right);
+    ast_destroy(ast->value.tnode.cond);
+
+    if (free_ast) free(ast);
 }

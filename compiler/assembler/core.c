@@ -21,11 +21,16 @@ LLVMValueRef _assembler_create_gconst_str(Assembler assembler, const char* name,
 char* _get_module_name(const char* fname);
 void _assembler_declare_builtin(Assembler assembler);
 void assembler_declare_printf(Assembler assembler);
+LLVMTypeRef _get_function_ret_type(LLVMValueRef func);
+
+typedef LLVMValueRef ReturnValue;
 
 // code gen privete functions
 LLVMValueRef _gen_expr(Assembler_str* ptr, AbstractSyntacticTree* expr);
 LLVMValueRef _gen_binary_operation(Assembler ptr, BinaryOperator op,
     LLVMValueRef left, LLVMValueRef right);
+void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst,
+    LLVMValueRef cur_func, LLVMValueRef ret_var, LLVMBasicBlockRef end_block);
 
 Assembler assembler_init(const char* module_name)
 {
@@ -56,6 +61,7 @@ void _assembler_declare_builtin(Assembler assembler)
 
 int assembler_dump_bytecode(Assembler assembler, const char* out_name)
 {
+    // add a mem2reg pass
     Assembler_str* ptr = (Assembler_str*) assembler;
     char *error = NULL;
     LLVMVerifyModule(ptr->mod, LLVMAbortProcessAction, &error);
@@ -156,8 +162,9 @@ void _add_params_to_locals(Assembler_str* ptr, LLVMValueRef func, LinkedList* pa
         node = ll_iter_next(node))
     {
         Parameter* param = nl_getValue(node);
+        LLVMSetValueName(args[num_parans], param->name);
         LLVMTypeRef type = LLVMTypeOf(args[num_parans]);
-        LLVMValueRef var = LLVMBuildAlloca(ptr->builder, type, ".param");
+        LLVMValueRef var = LLVMBuildAlloca(ptr->builder, type, ".p");
         LLVMBuildStore(ptr->builder, args[num_parans], var);
         hash_put(ptr->locals, (void*) param->name, var);
         num_parans++;
@@ -184,8 +191,10 @@ LLVMValueRef _gen_primary_expr(Assembler_str* ptr, AbstractSyntacticTree* expr)
         break;
         case CONST_REAL:
             return LLVMConstReal(LLVMDoubleType(), expr->value.leaf.double_constant);
+        break;
         case CONST_BOOL:
             return LLVMConstInt(LLVMInt1Type(), expr->value.leaf.integer_constant, 0);
+        break;
         case VAR_NAME:
             if (!assembler_is_defined(ptr, expr->value.leaf.str)) {
                 printf("At line %d: Undefined variable %s\n", yylineno, expr->value.leaf.str);
@@ -226,7 +235,7 @@ LLVMValueRef _gen_func_call(Assembler_str* ptr, AbstractSyntacticTree* func)
     // LLVMDumpType(LLVMGetReturnType(LLVMTypeOf(f)));
     // LLVMDumpType(LLVMTypeOf(f));
     // LLVMDumpType(LLVMGetReturnType(LLVMGetReturnType(LLVMTypeOf(f))));
-    if (LLVMGetReturnType(LLVMGetReturnType(LLVMTypeOf(f))) == LLVMVoidType())
+    if (_get_function_ret_type(f) == LLVMVoidType())
     {
         call_func = LLVMBuildCall(ptr->builder, f, args, ll_size(exprs), "");
     } else {
@@ -248,7 +257,7 @@ LLVMValueRef _gen_expr(Assembler_str* ptr, AbstractSyntacticTree* expr)
     if (_is_postfix_expr(expr))
         return _gen_postfix_expr(ptr, expr);
 
-    if (!(expr->production == B_EXPR)) {
+    if (expr->production != B_EXPR) {
         printf("Malformated ast! %d occur in a expression\n", expr->production);
         exit(-1);
     }
@@ -275,14 +284,6 @@ void _gen_assigment_expr(Assembler_str* ptr, AbstractSyntacticTree* inst)
     LLVMBuildStore(ptr->builder, llvm, var);
 }
 
-LLVMValueRef _gen_return(Assembler_str* ptr, AbstractSyntacticTree* ret)
-{
-    if (ret->value.interior.left == NULL)
-        return LLVMBuildRetVoid(ptr->builder);
-    LLVMValueRef expr = _gen_expr(ptr, ret->value.interior.left);
-    return LLVMBuildRet(ptr->builder, expr);
-}
-
 LLVMValueRef _gen_print(Assembler ptr, AbstractSyntacticTree* print_stm)
 {
     LLVMValueRef expr = _gen_expr(ptr, print_stm->value.interior.left);
@@ -301,7 +302,58 @@ LLVMValueRef _gen_print(Assembler ptr, AbstractSyntacticTree* print_stm)
     return LLVMBuildCall(ptr->builder, print, args, 2, ".print");
 }
 
-void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst)
+void _gen_return(Assembler_str* ptr, AbstractSyntacticTree* ret,
+    LLVMValueRef ret_var, LLVMBasicBlockRef end_block)
+{
+    if (ret->value.interior.left != NULL)
+    {
+        LLVMValueRef ret_val = _gen_expr(ptr, ret->value.interior.left);
+        LLVMBuildStore(ptr->builder, ret_val, ret_var);
+    }
+
+    LLVMBuildBr(ptr->builder, end_block);
+}
+
+void _gen_if(Assembler_str* ptr, AbstractSyntacticTree* inst,
+    LLVMValueRef cur_func, LLVMValueRef ret_var, LLVMBasicBlockRef end_block)
+{
+    LLVMValueRef condition = _gen_expr(ptr, inst->value.tnode.cond);
+    LLVMBasicBlockRef iftrue = LLVMAppendBasicBlock(cur_func, ".iftrue");
+    LLVMBasicBlockRef iffalse = LLVMAppendBasicBlock(cur_func, ".iffalse");
+    LLVMBasicBlockRef end = LLVMAppendBasicBlock(cur_func, ".endif");
+    LLVMBuildCondBr(ptr->builder, condition, iftrue, iffalse);
+    int contais_ret = 0;
+
+    LLVMPositionBuilderAtEnd(ptr->builder, iftrue);
+    for (NodeList* node = ll_iter_begin(&inst->value.tnode.left);
+         node != ll_iter_end(&inst->value.tnode.left);
+         node = ll_iter_next(node))
+    {
+        AbstractSyntacticTree* inst1 = nl_getValue(node);
+        _gen_statement(ptr, inst1, cur_func, ret_var, end_block);
+        if (inst1->production == RET_EXPR) contais_ret = 1;
+    }
+    if (! contais_ret)
+        LLVMBuildBr(ptr->builder, end);
+
+    contais_ret = 0;
+    LLVMPositionBuilderAtEnd(ptr->builder, iffalse);
+    for (NodeList* node = ll_iter_begin(&inst->value.tnode.right);
+         node != ll_iter_end(&inst->value.tnode.right);
+         node = ll_iter_next(node))
+    {
+        AbstractSyntacticTree* inst1 = nl_getValue(node);
+        _gen_statement(ptr, inst1, cur_func, ret_var, end_block);
+        if (inst1->production == RET_EXPR) contais_ret = 1;
+    }
+    if (! contais_ret)
+        LLVMBuildBr(ptr->builder, end);
+
+    LLVMPositionBuilderAtEnd(ptr->builder, end);
+}
+
+void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst,
+    LLVMValueRef cur_func, LLVMValueRef ret_var, LLVMBasicBlockRef end_block)
 {
     switch (inst->production)
     {
@@ -309,10 +361,13 @@ void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst)
             _gen_assigment_expr(ptr, inst);
         break;
         case RET_EXPR:
-            _gen_return(ptr, inst);
+            _gen_return(ptr, inst, ret_var, end_block);
         break;
         case PRINT_STM:
             _gen_print(ptr, inst);
+        break;
+        case IF_STM:
+            _gen_if(ptr, inst, cur_func, ret_var, end_block);
         break;
         case B_EXPR:
         case CONST_INT:
@@ -323,7 +378,7 @@ void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst)
             _gen_expr(ptr, inst);
         break;
         default:
-            printf("Not implemented yet\n");
+            printf("_gen_statement: Not implemented yet \n");
             exit(-1);
         break;
     }
@@ -335,30 +390,50 @@ void assembler_generate_function(Assembler assembler, FunctionNode* func_def)
     if (ll_size(&func_def->body) > 0) {
         LLVMValueRef func = hash_get(ptr->globals, (void*) func_def->func_name);
         LLVMBasicBlockRef entry = LLVMAppendBasicBlock(func, "entry");
-        
+        LLVMBasicBlockRef end = LLVMAppendBasicBlock(func, "end");
         LLVMPositionBuilderAtEnd(ptr->builder, entry);
+        LLVMValueRef ret_val = 0;
+        int contais_ret = 0;
+
+        if (strcmp(".void", func_def->ret_type) != 0) {
+            ret_val = LLVMBuildAlloca(ptr->builder,
+                hash_get(assembler->globals, (void*) func_def->ret_type), ".ret");
+            LLVMPositionBuilderAtEnd(ptr->builder, end);
+            LLVMBuildRet(ptr->builder, LLVMBuildLoad(ptr->builder, ret_val, ".ret_reg"));
+            LLVMPositionBuilderAtEnd(ptr->builder, entry);
+        }
+        else {
+            LLVMPositionBuilderAtEnd(ptr->builder, end);
+            LLVMBuildRetVoid(ptr->builder);
+            LLVMPositionBuilderAtEnd(ptr->builder, entry);
+        }
+        
         _add_params_to_locals(ptr, func, &func_def->parameters);
         LinkedList instructions = func_def->body;
-        int has_return = 0;
 
         for (NodeList* node = ll_iter_begin(&instructions);
             node != ll_iter_end(&instructions);
             node = ll_iter_next(node))
         {
             AbstractSyntacticTree* inst = nl_getValue(node);
-            if (inst->production == RET_EXPR) has_return = 1;
-            _gen_statement(ptr, inst);
+            _gen_statement(ptr, inst, func, ret_val, end);
+            if (inst->production == RET_EXPR) contais_ret = 1;
         }
 
-        if (! has_return) {
-            if (strcmp(".void", func_def->ret_type) == 0)
-                LLVMBuildRetVoid(ptr->builder);
-            else {
-                printf("%s has no return! Expected %s\n", func_def->func_name, func_def->ret_type);
-                exit(-1);
-            }
+        if (! contais_ret) {
+            if (LLVMGetFirstInstruction(LLVMGetInsertBlock(ptr->builder)) != 0)
+                LLVMBuildBr(ptr->builder, end);
+            else LLVMDeleteBasicBlock(LLVMGetInsertBlock(ptr->builder));
         }
 
+        if (LLVMGetLastBasicBlock(func) != end)
+            LLVMMoveBasicBlockAfter(end, LLVMGetLastBasicBlock(func));
+        // if (!has_return) {
+        //     printf("%s has no return! Expected %s\n", func_def->func_name, func_def->ret_type);
+        //     exit(-1);
+        // }
+
+//LLVMDumpValue(func);
         hash_destroy(ptr->locals);
         ptr->locals = hash_create(100, 0.75, (_COMPARE*) str_compare, (_HASH_CODE*) str_hash_code, NULL, NULL, NULL, NULL);
     }
@@ -392,27 +467,27 @@ LLVMValueRef _gen_binary_operation(Assembler ptr, BinaryOperator op,
             else llvm = LLVMBuildSRem(ptr->builder, left, right, ".tmp");
             break;
         case GT:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, left, right, ".tmp");
-            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntUGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
+            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSGT, left, right, ".tmp");
             break;
         case LT:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSLT, left, right, ".tmp");
             break;
         case GTE:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, left, right, ".tmp");
-            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntUGE, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
+            else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSGE, left, right, ".tmp");
             break;
         case LTE:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSLE, left, right, ".tmp");
             break;
         case EQ:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntEQ, left, right, ".tmp");
             break;
         case NEQ:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntNE, left, right, ".tmp");
             break;
         default:
@@ -481,4 +556,9 @@ int assembler_is_defined(Assembler assembler, const char* identifier)
 {
     Assembler_str* ptr = (Assembler_str*) assembler;
     return hash_contains_key(ptr->globals, (void*) identifier) || hash_contains_key(ptr->locals, (void*) identifier);
+}
+
+LLVMTypeRef _get_function_ret_type(LLVMValueRef func)
+{
+    return LLVMGetReturnType(LLVMGetReturnType(LLVMTypeOf(func)));
 }

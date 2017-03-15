@@ -10,14 +10,15 @@ typedef enum
     UNDEFINED = 0,
     FUNC_DEF,
     FUNC_CALL,
-    CONST_INT,
+    CONST_INT, // 3
     CONST_REAL,
-    CONST_BOOL,
+    CONST_BOOL, //5
     ASSIGN_EXPR,
     PRINT_STM,
+    IF_STM, // 8
     VAR_NAME,
     RET_EXPR,
-    B_EXPR
+    B_EXPR // 11
 } Production;
 
 typedef enum
@@ -58,11 +59,17 @@ typedef struct tree_node
             struct tree_node* right;  /* NULL if unary operator */
         } interior;
 
+        struct
+        {
+            struct tree_node* cond;
+            LinkedList left;
+            LinkedList right;
+        } tnode;
+
         struct {
             const char* str;
             int integer_constant;
             double double_constant;
-            LLVMValueRef value_ref;
         } leaf;
 
         FunctionNode func_def;
@@ -93,6 +100,8 @@ AbstractSyntacticTree* ast_return(AbstractSyntacticTree* expr);
 AbstractSyntacticTree* ast_print(AbstractSyntacticTree* expr);
 AbstractSyntacticTree* ast_assignment_expr(
     const char* identifier, AbstractSyntacticTree* right);
+AbstractSyntacticTree* ast_if(AbstractSyntacticTree* cond,
+    LinkedList then, LinkedList elsee);
 
 // Leaf nodes
 AbstractSyntacticTree* ast_const_bool(const char* value);

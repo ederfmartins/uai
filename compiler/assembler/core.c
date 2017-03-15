@@ -61,6 +61,7 @@ void _assembler_declare_builtin(Assembler assembler)
 
 int assembler_dump_bytecode(Assembler assembler, const char* out_name)
 {
+    // add a mem2reg pass
     Assembler_str* ptr = (Assembler_str*) assembler;
     char *error = NULL;
     LLVMVerifyModule(ptr->mod, LLVMAbortProcessAction, &error);
@@ -419,8 +420,11 @@ void assembler_generate_function(Assembler assembler, FunctionNode* func_def)
             if (inst->production == RET_EXPR) contais_ret = 1;
         }
 
-        if (! contais_ret)
-            LLVMBuildBr(ptr->builder, end);
+        if (! contais_ret) {
+            if (LLVMGetFirstInstruction(LLVMGetInsertBlock(ptr->builder)) != 0)
+                LLVMBuildBr(ptr->builder, end);
+            else LLVMDeleteBasicBlock(LLVMGetInsertBlock(ptr->builder));
+        }
 
         if (LLVMGetLastBasicBlock(func) != end)
             LLVMMoveBasicBlockAfter(end, LLVMGetLastBasicBlock(func));
@@ -463,27 +467,27 @@ LLVMValueRef _gen_binary_operation(Assembler ptr, BinaryOperator op,
             else llvm = LLVMBuildSRem(ptr->builder, left, right, ".tmp");
             break;
         case GT:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealSGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSGT, left, right, ".tmp");
             break;
         case LT:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealSGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSLT, left, right, ".tmp");
             break;
         case GTE:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealSGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSGE, left, right, ".tmp");
             break;
         case LTE:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealSGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntSLE, left, right, ".tmp");
             break;
         case EQ:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealSGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntEQ, left, right, ".tmp");
             break;
         case NEQ:
-            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealUGT, left, right, ".tmp");
+            if (is_double) llvm = LLVMBuildFCmp (ptr->builder, LLVMRealOGT, left, right, ".tmp");
             else llvm = LLVMBuildICmp (ptr->builder, LLVMIntNE, left, right, ".tmp");
             break;
         default:

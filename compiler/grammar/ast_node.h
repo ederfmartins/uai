@@ -10,15 +10,15 @@ typedef enum
     UNDEFINED = 0,
     FUNC_DEF,
     FUNC_CALL,
-    CONST_INT,
+    CONST_INT, // 3
     CONST_REAL,
-    CONST_BOOL,
+    CONST_BOOL, //5
     ASSIGN_EXPR,
     PRINT_STM,
-    IF_STM,
+    IF_STM, // 8
     VAR_NAME,
     RET_EXPR,
-    B_EXPR
+    B_EXPR // 11
 } Production;
 
 typedef enum

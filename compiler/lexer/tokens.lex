@@ -9,55 +9,99 @@ E           [Ee][+-]?{D}+
     #include <stdlib.h>
     #include "../grammar/ast_node.h"
     #include "../grammar/grammar.h"
+
+    void multiple_newlines();
+    void remove_comments();
+    void count_col();
+    int column = 0;
 %}
 
 %option yylineno
 
 %%
-or                  { return OR_OP; }
-and                  { return AND_OP; }
-print                  { return PRINT; }
-return                  { return RETURN; }
-def                  { return DEF; }
-if                  { return IF; }
-else                  { return ELSE; }
+or                    { count_col(); return OR_OP; }
+and                   { count_col(); return AND_OP; }
+print                 { count_col(); return PRINT; }
+return                { count_col(); return RETURN; }
+def                   { count_col(); return DEF; }
+if                    { count_col(); return IF; }
+else                  { count_col(); return ELSE; }
+for                   { count_col(); return FOR; }
 
-0[xX]{H}+           { yylval.integer = strtol(yytext, NULL, 16); return INT; }
-0[1-7]+             { yylval.integer = strtol(yytext, NULL, 8); return INT; }
--?{D}+                { yylval.integer = atoi(yytext); return INT; }
+0[xX]{H}+             { count_col(); yylval.integer = strtol(yytext, NULL, 16); return INT; }
+0[1-7]+               { count_col(); yylval.integer = strtol(yytext, NULL, 8); return INT; }
+-?{D}+                { count_col(); yylval.integer = atoi(yytext); return INT; }
 
-{D}+{E}             { yylval.real = atof(yytext); return FLOAT; }
-{D}*"."{D}+({E})?   { yylval.real = atof(yytext); return FLOAT; }
-{D}+"."{D}*({E})?   { yylval.real = atof(yytext); return FLOAT; }
+{D}+{E}               { count_col(); yylval.real = atof(yytext); return FLOAT; }
+{D}*"."{D}+({E})?     { count_col(); yylval.real = atof(yytext); return FLOAT; }
+{D}+"."{D}*({E})?     { count_col(); yylval.real = atof(yytext); return FLOAT; }
 
-{L}({L}|{D})*           { yylval.str = strdup(yytext); return IDENTIFIER; }
+{L}({L}|{D})*         { count_col(); yylval.str = strdup(yytext); return IDENTIFIER; }
 
-"<="                  { return LE_OP; }
-">="                  { return GE_OP; }
-"=="                  { return EQ_OP; }
-"!="                  { return NE_OP; }
-\+                  { return '+'; }
-\-                  { return '-'; }
-\*                  { return '*'; }
-\/                  { return '/'; }
-\^                  { return '^'; }
-\%                  { return '%'; }
-\(                  { return '('; }
-\)                  { return ')'; }
-\{                  { return '{'; }
-\}                  { return '}'; }
-"?"                  { return '?'; }
-":"                  { return ':'; }
-"="                   { return '='; }
-">"                   { return '>'; }
-"<"                   { return '<'; }
-","                   { return ','; }
+"/*"                  { remove_comments(); }
+"<="                  { count_col(); return LE_OP; }
+">="                  { count_col(); return GE_OP; }
+"=="                  { count_col(); return EQ_OP; }
+"!="                  { count_col(); return NE_OP; }
+\+                    { count_col(); return '+'; }
+\-                    { count_col(); return '-'; }
+\*                    { count_col(); return '*'; }
+\/                    { count_col(); return '/'; }
+\^                    { count_col(); return '^'; }
+\%                    { count_col(); return '%'; }
+\(                    { count_col(); return '('; }
+\)                    { count_col(); return ')'; }
+\{                    { count_col(); return '{'; }
+\}                    { count_col(); return '}'; }
+"?"                   { count_col(); return '?'; }
+":"                   { count_col(); return ':'; }
+"="                   { count_col(); return '='; }
+">"                   { count_col(); return '>'; }
+"<"                   { count_col(); return '<'; }
+","                   { count_col(); return ','; }
+";"                   { count_col(); return ';'; }
 
-\n                  return '\n';
+\n                    { count_col(); multiple_newlines(); return '\n';}
 [ \t]+              ;/* ignore whitespace */;
 %%
 
 int yywrap()
 {
     return 1;
+}
+
+void multiple_newlines()
+{
+    char new_line;
+    do new_line = input();
+    while (new_line == ' ' || new_line == '\n' || new_line == '\t');
+    if (new_line > 0)
+        unput(new_line);
+}
+
+void remove_comments()
+{
+    char c, c1;
+
+loop:
+    while ((c = input()) != '*' && c != 0);
+
+    if ((c1 = input()) != '/' && c != 0)
+    {
+        unput(c1);
+        goto loop;
+    }
+}
+
+void count_col()
+{
+    int i;
+
+    for (i = 0; yytext[i] != '\0'; i++)
+        if (yytext[i] == '\n')
+            column = 0;
+        else if (yytext[i] == '\t')
+            column += 8 - (column % 8);
+        else
+            column++;
 }

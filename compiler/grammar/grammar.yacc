@@ -43,6 +43,7 @@
 %token<str> DEF
 %token<str> IF
 %token<str> ELSE
+%token<str> FOR
 
 %token<str> OR_OP
 %token<str> AND_OP
@@ -56,7 +57,7 @@
 %type<ast> additive_expression multiplicative_expression expr
 %type<ast> relational_expression equality_expression
 %type<ast> logical_and_expression logical_or_expression conditional_expression
-%type<ast> print_stm return_statement
+%type<ast> print_stm return_statement for_statement
 
 %type<ast> postfix_expression
 %type<ast> function_definition statement if_statement
@@ -101,13 +102,14 @@ statement_list
 
 statement
     : expr '\n' dt
-    | assignment_expression dt
+    | assignment_expression '\n' dt
     | print_stm dt
     | return_statement dt
     | if_statement dt
+    | for_statement dt
     ;
 
-assignment_expression: IDENTIFIER '=' expr '\n'
+assignment_expression: IDENTIFIER '=' expr
     {
         $$ = ast_assignment_expr($1, $3);
     }
@@ -312,12 +314,16 @@ if_statement
     {
         $$ = ast_if($2, $4, $7);
     }
+    ;
 
-dt: discardable | epsilon;
+for_statement
+    : FOR assignment_expression ';' expr ';' assignment_expression '\n' dt compound_statement
+    {
+        $$ = ast_for($2, $4, $6, $9);
+    }
+    ;
 
-discardable: discardable  discardable_token | discardable_token;
-
-discardable_token: '\n'; 
+dt: '\n' | epsilon;
 
 epsilon: ; 
 
@@ -354,6 +360,8 @@ epsilon: ;
             if (assembler_dump_bytecode(assembler, out_name) != 0) {
                 fprintf(stderr, "error writing bitcode to file, skipping\n");
             }
+
+            assembler_destroy(assembler);
         }
 
         return 0;

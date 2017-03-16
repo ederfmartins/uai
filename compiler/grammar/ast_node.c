@@ -5,6 +5,7 @@
 #include <string.h>
 
 void ast_if_destroy(AbstractSyntacticTree* ast, int free_ast);
+void ast_for_destroy(AbstractSyntacticTree* ast, int free_ast);
 
 AbstractSyntacticTree* ast_init()
 {
@@ -48,7 +49,7 @@ void function_node_destroy(FunctionNode* func, int free_params)
 void ast_destroy(AbstractSyntacticTree* ast)
 {
     if (ast == NULL) return;
-    //printf("Destroy... %d\n", ast->production);
+    //printf("Destroy ... %d\n", ast->production);
     switch (ast->production)
     {
         case FUNC_DEF:
@@ -60,9 +61,12 @@ void ast_destroy(AbstractSyntacticTree* ast)
         case ASSIGN_EXPR:
             free(ast->value.interior.left);
             ast_destroy(ast->value.interior.right);
-            break;
+        break;
         case IF_STM:
             ast_if_destroy(ast, 0);
+        break;
+        case FOR_STM:
+            ast_for_destroy(ast, 0);
         break;
         case PRINT_STM:
         case RET_EXPR:
@@ -76,10 +80,10 @@ void ast_destroy(AbstractSyntacticTree* ast)
         case VAR_NAME:
         break;
         default:
-            printf("ast_destroy: Not implemented yet!\n");
+            printf("ast_destroy: Not implemented yet! %d\n", ast->production);
             exit(-1);
     }
-
+    //printf("ok... %d\n", ast->production);
     free(ast);
 }
 
@@ -194,6 +198,18 @@ AbstractSyntacticTree* ast_if(AbstractSyntacticTree* cond,
     return ast;
 }
 
+AbstractSyntacticTree* ast_for(AbstractSyntacticTree* init,
+    AbstractSyntacticTree* cond, AbstractSyntacticTree* inc, LinkedList body)
+{
+    AbstractSyntacticTree* ast = ast_init();
+    ast->production = FOR_STM;
+    ast->value.for_node.init = init;
+    ast->value.for_node.cond = cond;
+    ast->value.for_node.inc = inc;
+    ast->value.for_node.body = body;
+    return ast;
+}
+
 void ast_if_destroy(AbstractSyntacticTree* ast, int free_ast)
 {
     for (NodeList* node = ll_iter_begin(&ast->value.tnode.left);
@@ -216,3 +232,22 @@ void ast_if_destroy(AbstractSyntacticTree* ast, int free_ast)
 
     if (free_ast) free(ast);
 }
+
+void ast_for_destroy(AbstractSyntacticTree* ast, int free_ast)
+{
+    ast_destroy(ast->value.for_node.cond);
+    ast_destroy(ast->value.for_node.init);
+    ast_destroy(ast->value.for_node.inc);
+
+    for (NodeList* node = ll_iter_begin(&ast->value.for_node.body);
+        node != ll_iter_end(&ast->value.for_node.body);
+        node = ll_iter_next(node))
+    {
+        ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
+    }
+
+    ll_destroy(&ast->value.for_node.body);
+
+    if (free_ast) free(ast);
+}
+

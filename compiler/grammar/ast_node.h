@@ -16,9 +16,10 @@ typedef enum
     ASSIGN_EXPR,
     PRINT_STM,
     IF_STM, // 8
+    FOR_STM,
     VAR_NAME,
     RET_EXPR,
-    B_EXPR // 11
+    B_EXPR // 12
 } Production;
 
 typedef enum
@@ -66,6 +67,14 @@ typedef struct tree_node
             LinkedList right;
         } tnode;
 
+        struct
+        {
+            struct tree_node* init;
+            struct tree_node* cond;
+            struct tree_node* inc;
+            LinkedList body;
+        } for_node;
+
         struct {
             const char* str;
             int integer_constant;
@@ -102,6 +111,8 @@ AbstractSyntacticTree* ast_assignment_expr(
     const char* identifier, AbstractSyntacticTree* right);
 AbstractSyntacticTree* ast_if(AbstractSyntacticTree* cond,
     LinkedList then, LinkedList elsee);
+AbstractSyntacticTree* ast_for(AbstractSyntacticTree* init,
+    AbstractSyntacticTree* cond, AbstractSyntacticTree* inc, LinkedList body);
 
 // Leaf nodes
 AbstractSyntacticTree* ast_const_bool(const char* value);

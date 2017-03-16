@@ -6,6 +6,8 @@
 #include <llvm-c/Target.h>
 #include <llvm-c/Analysis.h>
 #include <llvm-c/BitWriter.h>
+#include <llvm-c/Transforms/IPO.h>
+#include <llvm-c/Transforms/Scalar.h>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +24,8 @@ char* _get_module_name(const char* fname);
 void _assembler_declare_builtin(Assembler assembler);
 void assembler_declare_printf(Assembler assembler);
 LLVMTypeRef _get_function_ret_type(LLVMValueRef func);
+int has_no_predecessors(Assembler assembler, LLVMBasicBlockRef entry,
+    LLVMBasicBlockRef block);
 
 typedef LLVMValueRef ReturnValue;
 
@@ -66,6 +70,21 @@ int assembler_dump_bytecode(Assembler assembler, const char* out_name)
     char *error = NULL;
     LLVMVerifyModule(ptr->mod, LLVMAbortProcessAction, &error);
     LLVMDisposeMessage(error);
+
+    //printf("Optimizing stage\n");
+    LLVMPassManagerRef  pm = LLVMCreatePassManager();
+    LLVMAddConstantMergePass(pm);
+    LLVMAddPromoteMemoryToRegisterPass(pm);
+    LLVMAddArgumentPromotionPass(pm);
+    LLVMAddReassociatePass(pm);
+    LLVMAddDeadStoreEliminationPass(pm);
+    LLVMAddTailCallEliminationPass(pm);
+    LLVMAddAggressiveDCEPass(pm);
+    LLVMRunPassManager(pm, ptr->mod);
+
+    //printf("After pass managers.\n");
+    LLVMVerifyModule(ptr->mod, LLVMAbortProcessAction, &error);
+    LLVMDisposeMessage(error);
     return LLVMWriteBitcodeToFile(ptr->mod, out_name);
 }
 
@@ -99,7 +118,6 @@ void assembler_generate_functions(Assembler assembler, LinkedList* func_list)
     {
         AbstractSyntacticTree* func = nl_getValue(node);
         assembler_generate_function(assembler, &func->value.func_def);
-        //function_node_destroy(&func->value.func_def);
         ast_destroy(func);
     }
 
@@ -352,6 +370,41 @@ void _gen_if(Assembler_str* ptr, AbstractSyntacticTree* inst,
     LLVMPositionBuilderAtEnd(ptr->builder, end);
 }
 
+void _gen_for(Assembler_str* ptr, AbstractSyntacticTree* inst,
+    LLVMValueRef cur_func, LLVMValueRef ret_var, LLVMBasicBlockRef end_block)
+{
+    LLVMBasicBlockRef test_cond = LLVMAppendBasicBlock(cur_func, ".ftest");
+    LLVMBasicBlockRef fbody = LLVMAppendBasicBlock(cur_func, ".fbody");
+    LLVMBasicBlockRef inc = LLVMAppendBasicBlock(cur_func, ".finc");
+    LLVMBasicBlockRef end = LLVMAppendBasicBlock(cur_func, ".endfor");
+
+    _gen_statement(ptr, inst->value.for_node.init, cur_func, ret_var, end_block);
+    LLVMBuildBr(ptr->builder, test_cond);
+
+    LLVMPositionBuilderAtEnd(ptr->builder, test_cond);
+    LLVMValueRef condition = _gen_expr(ptr, inst->value.for_node.cond);
+    LLVMBuildCondBr(ptr->builder, condition, fbody, end);
+
+    int contais_ret = 0;
+    LLVMPositionBuilderAtEnd(ptr->builder, fbody);
+    for (NodeList* node = ll_iter_begin(&inst->value.for_node.body);
+         node != ll_iter_end(&inst->value.for_node.body);
+         node = ll_iter_next(node))
+    {
+        AbstractSyntacticTree* inst1 = nl_getValue(node);
+        _gen_statement(ptr, inst1, cur_func, ret_var, end_block);
+        if (inst1->production == RET_EXPR) contais_ret = 1;
+    }
+    if (! contais_ret)
+        LLVMBuildBr(ptr->builder, inc);
+
+    LLVMPositionBuilderAtEnd(ptr->builder, inc);
+    _gen_statement(ptr, inst->value.for_node.inc, cur_func, ret_var, end_block);
+    LLVMBuildBr(ptr->builder, test_cond);    
+
+    LLVMPositionBuilderAtEnd(ptr->builder, end);
+}
+
 void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst,
     LLVMValueRef cur_func, LLVMValueRef ret_var, LLVMBasicBlockRef end_block)
 {
@@ -368,6 +421,9 @@ void _gen_statement(Assembler_str* ptr, AbstractSyntacticTree* inst,
         break;
         case IF_STM:
             _gen_if(ptr, inst, cur_func, ret_var, end_block);
+        break;
+        case FOR_STM:
+            _gen_for(ptr, inst, cur_func, ret_var, end_block);
         break;
         case B_EXPR:
         case CONST_INT:
@@ -420,10 +476,18 @@ void assembler_generate_function(Assembler assembler, FunctionNode* func_def)
             if (inst->production == RET_EXPR) contais_ret = 1;
         }
 
-        if (! contais_ret) {
-            if (LLVMGetFirstInstruction(LLVMGetInsertBlock(ptr->builder)) != 0)
-                LLVMBuildBr(ptr->builder, end);
-            else LLVMDeleteBasicBlock(LLVMGetInsertBlock(ptr->builder));
+        if (!contais_ret) {
+            //LLVMGetNumSuccessors
+            LLVMBuildBr(ptr->builder, end);
+            //if (LLVMGetFirstInstruction(LLVMGetInsertBlock(ptr->builder)) != 0)
+            //else LLVMDeleteBasicBlock(LLVMGetInsertBlock(ptr->builder));
+        }
+
+        LLVMBasicBlockRef cur_block = LLVMGetInsertBlock(ptr->builder);
+        if (cur_block != entry && cur_block != end)
+        {
+            if (has_no_predecessors(ptr, entry, cur_block))
+                LLVMDeleteBasicBlock(LLVMGetInsertBlock(ptr->builder));
         }
 
         if (LLVMGetLastBasicBlock(func) != end)
@@ -437,6 +501,23 @@ void assembler_generate_function(Assembler assembler, FunctionNode* func_def)
         hash_destroy(ptr->locals);
         ptr->locals = hash_create(100, 0.75, (_COMPARE*) str_compare, (_HASH_CODE*) str_hash_code, NULL, NULL, NULL, NULL);
     }
+}
+
+int has_no_predecessors(Assembler assembler, LLVMBasicBlockRef entry,
+    LLVMBasicBlockRef block)
+{
+    while (entry != 0)
+    {
+        LLVMValueRef term = LLVMGetBasicBlockTerminator(entry);
+        for (unsigned int i = 0; i < LLVMGetNumSuccessors(term); i++)
+        {
+            if (block == LLVMGetSuccessor(term, i))
+                return 0;
+        }
+        entry = LLVMGetNextBasicBlock(entry);
+    }
+
+    return 1;
 }
 
 LLVMValueRef _gen_binary_operation(Assembler ptr, BinaryOperator op,

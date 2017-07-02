@@ -12,34 +12,29 @@ AbstractSyntacticTree* ast_init()
    AbstractSyntacticTree* t = (AbstractSyntacticTree*) malloc (sizeof(AbstractSyntacticTree));
    t->production = UNDEFINED;
    t->operation = 0;
-   // this can be dangerous :(
-   // t->value.interior.left = (AbstractSyntacticTree*) NULL;
-   // t->value.interior.right = (AbstractSyntacticTree*) NULL;
    return t;
 }
 
-void function_node_destroy(FunctionNode* func, int free_params)
+void function_node_destroy(FunctionNode* func, int is_ast)
 {
     /*
     TODO: verify the ownership off there variables
     const char* func_name;
     const char* ret_type;
     */
-    //printf("Destroy %s %d\n", func->func_name, ll_size(&func->body));
     for (NodeList* node = ll_iter_begin(&func->body);
         node != ll_iter_end(&func->body);
         node = ll_iter_next(node))
     {
         ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
     }
-    if (free_params)
-    {
-        for (NodeList* node = ll_iter_begin(&func->parameters);
+
+    for (NodeList* node = ll_iter_begin(&func->parameters);
         node != ll_iter_end(&func->parameters);
         node = ll_iter_next(node))
-        {
-            ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
-        }
+    {
+        if (is_ast) ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
+        else free(nl_getValue(node));
     }
 
     ll_destroy(&func->parameters);
@@ -62,6 +57,9 @@ void ast_destroy(AbstractSyntacticTree* ast)
             free(ast->value.interior.left);
             ast_destroy(ast->value.interior.right);
         break;
+        case UN_EXPR:
+            ast_destroy(ast->value.interior.left);
+        break;
         case IF_STM:
             ast_if_destroy(ast, 0);
         break;
@@ -70,6 +68,7 @@ void ast_destroy(AbstractSyntacticTree* ast)
         break;
         case PRINT_STM:
         case RET_EXPR:
+        case ARRAY_GET:
         case B_EXPR:
             ast_destroy(ast->value.interior.right);
             ast_destroy(ast->value.interior.left);
@@ -78,6 +77,15 @@ void ast_destroy(AbstractSyntacticTree* ast)
         case CONST_REAL:
         case CONST_BOOL:
         case VAR_NAME:
+        break;
+        case CONST_ARRAY:
+        for (NodeList* node = ll_iter_begin(&ast->value.stm_list);
+            node != ll_iter_end(&ast->value.stm_list);
+            node = ll_iter_next(node))
+        {
+            ast_destroy((AbstractSyntacticTree*) nl_getValue(node));
+        }
+        ll_destroy(&ast->value.stm_list);
         break;
         default:
             printf("ast_destroy: Not implemented yet! %d\n", ast->production);
@@ -135,6 +143,13 @@ AbstractSyntacticTree* ast_function_call(
     return ast;
 }
 
+AbstractSyntacticTree* ast_get_pointer(AbstractSyntacticTree* expr)
+{
+    AbstractSyntacticTree* ast = ast_interior(UN_EXPR, expr, NULL);
+    ast->operation = U_GET_ADRESS;
+    return ast;
+}
+
 AbstractSyntacticTree* ast_const_bool(const char* value)
 {
     AbstractSyntacticTree* ast = ast_init();
@@ -160,6 +175,14 @@ AbstractSyntacticTree* ast_const_float(double value)
     return ast;
 }
 
+AbstractSyntacticTree* ast_const_array(LinkedList* elements)
+{
+    AbstractSyntacticTree* ast = ast_init();
+    ast->production = CONST_ARRAY;
+    ast->value.stm_list = *elements;
+    return ast;
+}
+
 AbstractSyntacticTree* ast_return(AbstractSyntacticTree* expr)
 {
     return ast_interior(RET_EXPR, expr, NULL);
@@ -178,12 +201,16 @@ AbstractSyntacticTree* ast_var_name(const char* var_name)
     return ast;
 }
 
-AbstractSyntacticTree* ast_assignment_expr(
+AbstractSyntacticTree* ast_decl_assign_expr(
     const char* identifier, AbstractSyntacticTree* right)
 {
-    AbstractSyntacticTree* left = ast_init();
-    left->production = UNDEFINED;
-    left->value.leaf.str = identifier;
+    AbstractSyntacticTree* left = ast_var_name(identifier);
+    return ast_interior(ASSIGN_EXPR, left, right);
+}
+
+AbstractSyntacticTree* ast_assign_expr(
+    AbstractSyntacticTree* left, AbstractSyntacticTree* right)
+{
     return ast_interior(ASSIGN_EXPR, left, right);
 }
 
@@ -208,6 +235,11 @@ AbstractSyntacticTree* ast_for(AbstractSyntacticTree* init,
     ast->value.for_node.inc = inc;
     ast->value.for_node.body = body;
     return ast;
+}
+
+AbstractSyntacticTree* ast_array_get(const char* var_name, AbstractSyntacticTree* idx)
+{
+    return ast_interior(ARRAY_GET, ast_var_name(var_name), idx);
 }
 
 void ast_if_destroy(AbstractSyntacticTree* ast, int free_ast)

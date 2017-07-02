@@ -13,13 +13,16 @@ typedef enum
     CONST_INT, // 3
     CONST_REAL,
     CONST_BOOL, //5
+    CONST_ARRAY,
+    ARRAY_GET,
     ASSIGN_EXPR,
     PRINT_STM,
-    IF_STM, // 8
+    IF_STM, // 10
     FOR_STM,
     VAR_NAME,
     RET_EXPR,
-    B_EXPR // 12
+    B_EXPR, // 14
+    UN_EXPR
 } Production;
 
 typedef enum
@@ -37,6 +40,11 @@ typedef enum
     NEQ
 } BinaryOperator;
 
+typedef enum
+{
+    U_GET_ADRESS
+} UnaryOperator;
+
 struct tree_node;
 
 typedef struct
@@ -51,7 +59,7 @@ typedef struct
 typedef struct tree_node
 {
     Production production;
-    BinaryOperator operation;
+    int operation;
     union
     {
         struct
@@ -82,6 +90,7 @@ typedef struct tree_node
         } leaf;
 
         FunctionNode func_def;
+        LinkedList stm_list;
 
     } value;
 } AbstractSyntacticTree;
@@ -107,17 +116,22 @@ AbstractSyntacticTree* ast_function_call(
 // Statements
 AbstractSyntacticTree* ast_return(AbstractSyntacticTree* expr);
 AbstractSyntacticTree* ast_print(AbstractSyntacticTree* expr);
-AbstractSyntacticTree* ast_assignment_expr(
+AbstractSyntacticTree* ast_decl_assign_expr(
     const char* identifier, AbstractSyntacticTree* right);
+AbstractSyntacticTree* ast_assign_expr(
+    AbstractSyntacticTree* left, AbstractSyntacticTree* right);
 AbstractSyntacticTree* ast_if(AbstractSyntacticTree* cond,
     LinkedList then, LinkedList elsee);
 AbstractSyntacticTree* ast_for(AbstractSyntacticTree* init,
     AbstractSyntacticTree* cond, AbstractSyntacticTree* inc, LinkedList body);
+AbstractSyntacticTree* ast_array_get(const char* var_name, AbstractSyntacticTree* idx);
+AbstractSyntacticTree* ast_get_pointer(AbstractSyntacticTree* expr);
 
 // Leaf nodes
 AbstractSyntacticTree* ast_const_bool(const char* value);
 AbstractSyntacticTree* ast_const_int(int value);
 AbstractSyntacticTree* ast_const_float(double value);
 AbstractSyntacticTree* ast_var_name(const char* var_name);
+AbstractSyntacticTree* ast_const_array(LinkedList* elements);
 
 #endif

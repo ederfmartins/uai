@@ -53,7 +53,10 @@ for                   { count_col(); return FOR; }
 \)                    { count_col(); return ')'; }
 \{                    { count_col(); return '{'; }
 \}                    { count_col(); return '}'; }
+\[                    { count_col(); return '['; }
+\]                    { count_col(); return ']'; }
 "?"                   { count_col(); return '?'; }
+"&"                   { count_col(); return '&'; }
 ":"                   { count_col(); return ':'; }
 "="                   { count_col(); return '='; }
 ">"                   { count_col(); return '>'; }

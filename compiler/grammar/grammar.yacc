@@ -43,6 +43,7 @@
 %token<str> DEF
 %token<str> IF
 %token<str> ELSE
+%token<str> FOR
 
 %token<str> OR_OP
 %token<str> AND_OP
@@ -56,11 +57,11 @@
 %type<ast> additive_expression multiplicative_expression expr
 %type<ast> relational_expression equality_expression
 %type<ast> logical_and_expression logical_or_expression conditional_expression
-%type<ast> print_stm return_statement
+%type<ast> print_stm return_statement for_statement
 
-%type<ast> postfix_expression
+%type<ast> assignment_expression
+%type<ast> postfix_expression unary_expression primary_expression
 %type<ast> function_definition statement if_statement
-%type<ast> assignment_expression primary_expression
 %type<list> parameter_list argument_expression_list function_list
 %type<list> statement_list function_body compound_statement
 %type<param> parameter_declaration
@@ -101,15 +102,16 @@ statement_list
 
 statement
     : expr '\n' dt
-    | assignment_expression dt
+    | assignment_expression '\n' dt
     | print_stm dt
     | return_statement dt
     | if_statement dt
+    | for_statement dt
     ;
 
-assignment_expression: IDENTIFIER '=' expr '\n'
+assignment_expression: unary_expression '=' expr
     {
-        $$ = ast_assignment_expr($1, $3);
+        $$ = ast_assign_expr($1, $3);
     }
     ;
 
@@ -149,6 +151,15 @@ postfix_expression
     {
         $$ = ast_function_call($1, &$3);
     }
+    |
+    '[' argument_expression_list ']'
+    {
+        $$ = ast_const_array(&$2);
+    }
+    | IDENTIFIER '[' expr ']'
+    {
+        $$ = ast_array_get($1, $3);
+    }
     ;
 
 argument_expression_list
@@ -156,7 +167,7 @@ argument_expression_list
     {
         ll_init(&$$);
         ll_insert(&$$, $1);
-    }
+    } 
     | argument_expression_list ',' dt expr
     {
         ll_insert(&$1, $4);
@@ -164,17 +175,24 @@ argument_expression_list
     }
     ;
 
-multiplicative_expression
+unary_expression
     : postfix_expression
-    | multiplicative_expression '*' dt postfix_expression
+    | '&' unary_expression
+    {
+        $$ = ast_get_pointer($2);
+    };
+
+multiplicative_expression
+    : unary_expression
+    | multiplicative_expression '*' dt unary_expression
     {
         $$ = binary_expr(MUL, $1, $4);
     }
-    | multiplicative_expression '/' dt postfix_expression
+    | multiplicative_expression '/' dt unary_expression
     {
         $$ = binary_expr(DIV, $1, $4);
     }
-    | multiplicative_expression '%' dt postfix_expression
+    | multiplicative_expression '%' dt unary_expression
     {
         $$ = binary_expr(MOD, $1, $4);
     }
@@ -232,13 +250,13 @@ function_definition: DEF IDENTIFIER '(' parameter_list ')' function_body
         ll_init(&l);
         $$ = ast_function_definition($2, ".void", &l, &$5);
     }
-    | DEF IDENTIFIER IDENTIFIER '(' ')' function_body
+    | DEF type_decl IDENTIFIER '(' ')' function_body
     {
         LinkedList l;
         ll_init(&l);
         $$ = ast_function_definition($3, $2, &l, &$6);
     }
-    | DEF IDENTIFIER IDENTIFIER '(' parameter_list ')' function_body
+    | DEF type_decl IDENTIFIER '(' parameter_list ')' function_body
     {
         $$ = ast_function_definition($3, $2, &$5, &$7);
     }
@@ -272,12 +290,14 @@ parameter_list
     }
     ;
 
-parameter_declaration: IDENTIFIER IDENTIFIER
+parameter_declaration: type_decl IDENTIFIER
     {
         $$.type = $1;
         $$.name = $2;
     }
     ;
+
+type_decl: IDENTIFIER;
 
 return_statement
     : RETURN '\n'
@@ -312,12 +332,16 @@ if_statement
     {
         $$ = ast_if($2, $4, $7);
     }
+    ;
 
-dt: discardable | epsilon;
+for_statement
+    : FOR assignment_expression ';' expr ';' assignment_expression '\n' dt compound_statement
+    {
+        $$ = ast_for($2, $4, $6, $9);
+    }
+    ;
 
-discardable: discardable  discardable_token | discardable_token;
-
-discardable_token: '\n'; 
+dt: '\n' | epsilon;
 
 epsilon: ; 
 
@@ -354,6 +378,9 @@ epsilon: ;
             if (assembler_dump_bytecode(assembler, out_name) != 0) {
                 fprintf(stderr, "error writing bitcode to file, skipping\n");
             }
+
+            assembler_destroy(assembler);
+            if (argc < 3) free(out_name);
         }
 
         return 0;

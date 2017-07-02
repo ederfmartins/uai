@@ -55,12 +55,12 @@ void ll_clone(LinkedList* src, LinkedList* dest)
 }
 void ll_destroy(LinkedList* list)
 {
-	if (list->cnt > 0)
-	{
-		NodeList* aux = list->head->Prox;
+	//if (list->cnt > 0)
+	//{
+		//NodeList* aux = list->head->Prox;
+		NodeList* aux = list->head;
 		NodeList* aux1 = NULL;
-
-		while (aux != list->head)
+		while (aux != list->tail)
 		{
 			aux1 = aux->Prox;
 			if (list->recursiveFree != NULL)
@@ -68,13 +68,14 @@ void ll_destroy(LinkedList* list)
 			free(aux);
 			aux = aux1;
 		}
+		if (list->recursiveFree != NULL)
+			(list->recursiveFree)(aux->value);
 		free(aux);
-
-	}
-	else if (list->cnt == 0 && list->head != NULL)
-	{
-		free(list->head);
-	}
+	//}
+	//else if (list->cnt == 0 && list->head != NULL)
+	//{
+	//	free(list->head);
+	//}
 	list->head = NULL;
 	list->tail = NULL;
 	list->cnt = 0;
